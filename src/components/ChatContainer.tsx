@@ -9,6 +9,8 @@ import {
   Chip,
   CircularProgress,
   Button,
+  Fab,
+  Tooltip,
 } from '@mui/material';
 import {
   Chat as ChatIcon,
@@ -134,6 +136,8 @@ const ChatContainer: React.FC = () => {
       clearTimeout(animationTimeoutRef.current);
       animationTimeoutRef.current = null;
     }
+    // Scroll to top when starting playback
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     if (transformedHistoryRef.current.length > 0) {
       animateConversation(transformedHistoryRef.current);
     }
@@ -317,9 +321,9 @@ const ChatContainer: React.FC = () => {
       setLoading(false);
       setInitialized(true);
       
-      // Transform and animate the conversation (don't await this)
+      // Transform and store the conversation (don't auto-start, wait for user to hit play)
       const transformed = transformChatHistory(newHistory);
-      animateConversation(transformed);
+      transformedHistoryRef.current = transformed;
     } catch (error) {
       console.warn("Remote API unavailable, falling back to local JSON file.");
       try {
@@ -331,9 +335,9 @@ const ChatContainer: React.FC = () => {
         setLoading(false);
         setInitialized(true);
         
-        // Transform and animate the conversation (don't await this)
+        // Transform and store the conversation (don't auto-start, wait for user to hit play)
         const transformed = transformChatHistory(localMessages);
-        animateConversation(transformed);
+        transformedHistoryRef.current = transformed;
       } catch (localErr) {
         console.error('Failed to load local chat history:', localErr);
         setLoading(false);
@@ -362,8 +366,13 @@ const ChatContainer: React.FC = () => {
   };
 
   return (
-    <Box sx={{ width: '100vw', minHeight: '100vh' }}>
-      <AppBar position="static" color="primary" sx={{ width: '100%' }}>
+    <Box sx={{ 
+      width: '100vw', 
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+    }}>
+      <AppBar position="static" color="primary" sx={{ width: '100%', flexShrink: 0 }}>
         <Toolbar>
           <ChatIcon sx={{ mr: 2 }} />
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
@@ -378,77 +387,63 @@ const ChatContainer: React.FC = () => {
         </Toolbar>
       </AppBar>
 
-      <Box sx={{ width: '100%', display: 'flex', justifyContent: 'center', mt: 3, mb: 3 }}>
-        <Box sx={{ width: '50%', minWidth: 600, maxWidth: 1000 }}>
+      <Box sx={{ 
+        width: '100%', 
+        display: 'flex', 
+        justifyContent: 'center', 
+        flexGrow: 1,
+        mt: animationInProgress ? 0 : 3, 
+        mb: animationInProgress ? 0 : 3,
+        overflow: 'hidden',
+      }}>
+        <Box sx={{ 
+          width: '66%', 
+          minWidth: 600, 
+          maxWidth: 1200,
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
+        }}>
 
-        <Paper elevation={1} sx={{ p: 3, mb: 3, bgcolor: 'grey.900', borderRadius: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-            <Typography variant="h5" component="h1">
-              Support Investigation Chat
-            </Typography>
-          </Box>
-          <Typography variant="body2" color="text.secondary" paragraph>
-            This chat demonstrates a support engineer working with an AI assistant to investigate 
-            a "database connection pool exhaustion" alert for the StockSavvy SaaS application. 
-            The investigation includes searching Confluence runbooks and analyzing Splunk logs.
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
-            <Chip size="small" label="Confluence Integration" />
-            <Chip size="small" label="Splunk Analysis" />
-            <Chip size="small" label="SRE Runbook" />
-            <Chip size="small" label="Database Troubleshooting" />
-          </Box>
-          
-          {/* Playback Controls */}
-          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 2 }}>
-            <Typography variant="body2" color="text.secondary" sx={{ mr: 1 }}>
-              Playback:
-            </Typography>
-            {!animationInProgress || isPaused ? (
-              <Button
-                size="small"
-                variant="contained"
-                startIcon={<PlayIcon />}
-                onClick={isPaused ? resumeAnimation : restartAnimation}
-                disabled={loading}
-              >
-                {isPaused ? 'Resume' : 'Play'}
-              </Button>
-            ) : (
-              <Button
-                size="small"
-                variant="contained"
-                startIcon={<PauseIcon />}
-                onClick={pauseAnimation}
-              >
-                Pause
-              </Button>
-            )}
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<RestartIcon />}
-              onClick={restartAnimation}
-              disabled={loading}
-            >
-              Restart
-            </Button>
-            {animationInProgress && (
-              <Typography variant="caption" color="text.secondary">
-                Message {currentMessageIndex} / {transformedHistoryRef.current.length}
+        {/* Header card - hidden during playback */}
+        {!animationInProgress && (
+          <Paper elevation={1} sx={{ p: 3, mb: 3, bgcolor: 'grey.900', borderRadius: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+              <Typography variant="h5" component="h1">
+                Support Investigation Chat
               </Typography>
-            )}
-          </Box>
-        </Paper>
+            </Box>
+            <Typography variant="body2" color="text.secondary" paragraph>
+              This chat demonstrates a support engineer working with an AI assistant to investigate 
+              a "database connection pool exhaustion" alert for the StockSavvy SaaS application. 
+              The investigation includes searching Confluence runbooks and analyzing Splunk logs.
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+              <Chip size="small" label="Confluence Integration" />
+              <Chip size="small" label="Splunk Analysis" />
+              <Chip size="small" label="SRE Runbook" />
+              <Chip size="small" label="Database Troubleshooting" />
+            </Box>
+            
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+              Press the play button in the bottom right to start the demo.
+            </Typography>
+          </Paper>
+        )}
 
-        <Divider sx={{ mb: 3 }} />
+        {!animationInProgress && <Divider sx={{ mb: 3 }} />}
 
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
             <CircularProgress />
           </Box>
         ) : (
-          <Box sx={{ maxHeight: 'calc(100vh - 300px)', overflow: 'auto', pr: 1 }}>
+          <Box sx={{ 
+            flexGrow: 1,
+            overflow: 'auto', 
+            pr: 1,
+            pb: animationInProgress ? 10 : 0, // Extra padding at bottom during playback for floating controls
+          }}>
             {displayedHistory.map((message, index) => (
               <ChatMessage 
                 key={index} 
@@ -461,22 +456,89 @@ const ChatContainer: React.FC = () => {
           </Box>
         )}
 
-        {hasMore && !loading && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+        {hasMore && !loading && !animationInProgress && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2, flexShrink: 0 }}>
             <Button variant="contained" onClick={handleLoadMore}>
               Load More
             </Button>
           </Box>
         )}
 
-        <Paper elevation={0} sx={{ mt: 3, p: 2, bgcolor: 'grey.50' }}>
-          <Typography variant="caption" color="text.secondary" align="center" display="block">
-            Chat contains {displayedHistory.length} messages • 
-            Built with React, TypeScript, Vite & Material-UI
-          </Typography>
-        </Paper>
+        {/* Footer - hidden during playback */}
+        {!animationInProgress && (
+          <Paper elevation={0} sx={{ mt: 3, p: 2, bgcolor: 'grey.50', flexShrink: 0 }}>
+            <Typography variant="caption" color="text.secondary" align="center" display="block">
+              Chat contains {displayedHistory.length} messages • 
+              Built with React, TypeScript, Vite & Material-UI
+            </Typography>
+          </Paper>
+        )}
         </Box>
       </Box>
+
+      {/* Floating Playback Controls */}
+      <Paper
+        elevation={6}
+        sx={{
+          position: 'fixed',
+          bottom: 24,
+          right: 24,
+          zIndex: 1000,
+          borderRadius: 8,
+          bgcolor: 'grey.900',
+          p: 1,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+        }}
+      >
+        {/* Progress indicator */}
+        {animationInProgress && (
+          <Typography variant="caption" color="text.secondary" sx={{ px: 1 }}>
+            {currentMessageIndex + 1} / {transformedHistoryRef.current.length}
+          </Typography>
+        )}
+        
+        {/* Restart button */}
+        <Tooltip title="Restart">
+          <span>
+            <Fab
+              size="small"
+              color="default"
+              onClick={restartAnimation}
+              disabled={loading}
+              sx={{ bgcolor: 'grey.800', '&:hover': { bgcolor: 'grey.700' } }}
+            >
+              <RestartIcon />
+            </Fab>
+          </span>
+        </Tooltip>
+        
+        {/* Play/Pause button */}
+        <Tooltip title={animationInProgress && !isPaused ? 'Pause' : isPaused ? 'Resume' : 'Play'}>
+          <span>
+            <Fab
+              color={animationInProgress && !isPaused ? 'secondary' : 'primary'}
+              onClick={() => {
+                if (animationInProgress && !isPaused) {
+                  pauseAnimation();
+                } else if (isPaused) {
+                  resumeAnimation();
+                } else {
+                  restartAnimation();
+                }
+              }}
+              disabled={loading}
+              sx={{
+                width: 56,
+                height: 56,
+              }}
+            >
+              {animationInProgress && !isPaused ? <PauseIcon /> : <PlayIcon />}
+            </Fab>
+          </span>
+        </Tooltip>
+      </Paper>
     </Box>
   );
 };
