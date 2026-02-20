@@ -1,108 +1,169 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Box,
   Typography,
   Paper,
   Divider,
-  AppBar,
-  Toolbar,
   Chip,
   CircularProgress,
-  Button,
   Fab,
   Tooltip,
 } from '@mui/material';
 import {
-  Chat as ChatIcon,
-  BugReport as BugIcon,
   PlayArrow as PlayIcon,
   Pause as PauseIcon,
   Replay as RestartIcon,
 } from '@mui/icons-material';
 import ChatMessage from './ChatMessage';
-import type { ChatHistory } from '../types/chat';
-const ChatContainer: React.FC = () => {
-  const [chatHistory, setChatHistory] = useState<ChatHistory>([]);
-  const [displayedHistory, setDisplayedHistory] = useState<ChatHistory>([]);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
+import type {
+  UnifiedMessage,
+  PlaybackHistory,
+  DisplaySettings,
+  ConversationInfo,
+} from '../types/chat';
+
+interface ChatContainerProps {
+  conversation: UnifiedMessage[] | null;
+  conversationInfo: ConversationInfo | null;
+  displaySettings: DisplaySettings;
+}
+
+const ChatContainer: React.FC<ChatContainerProps> = ({
+  conversation,
+  conversationInfo,
+  displaySettings,
+}) => {
+  const [displayedHistory, setDisplayedHistory] = useState<PlaybackHistory>([]);
   const [animationInProgress, setAnimationInProgress] = useState(false);
-  const [initialized, setInitialized] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
-  const currentIndexRef = useRef(0);
 
+  const currentIndexRef = useRef(0);
   const messagesEndRef = useRef<null | HTMLDivElement>(null);
   const animationTimeoutRef = useRef<number | null>(null);
-  const transformedHistoryRef = useRef<ChatHistory>([]);
-  // Refs to keep immediate, mutation-friendly copies of paused and animation states
+  const transformedHistoryRef = useRef<PlaybackHistory>([]);
   const isPausedRef = useRef(false);
   const animationInProgressRef = useRef(false);
+  const displaySettingsRef = useRef(displaySettings);
+
+  useEffect(() => {
+    displaySettingsRef.current = displaySettings;
+  }, [displaySettings]);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   useEffect(() => {
     scrollToBottom();
   }, [displayedHistory]);
 
-  // Keep ref in sync with state for reliable current index tracking
   useEffect(() => {
     currentIndexRef.current = currentMessageIndex;
   }, [currentMessageIndex]);
 
-  // Transform raw chat history into realistic conversation flow
-  const transformChatHistory = (rawHistory: ChatHistory): ChatHistory => {
-    const transformed: ChatHistory = [];
-    
-    for (let i = 0; i < rawHistory.length; i++) {
-      const message = rawHistory[i];
-      
-      // Handle function responses - convert from user messages to system messages
-      if (message.role === 'user' && message.parts.some(part => part.functionResponse)) {
-        transformed.push({
-          ...message,
-          role: 'system'
-        });
-        continue;
-      }
-      
-      // Handle assistant messages with function calls
-      if (message.role === 'model' && message.parts.some(part => part.functionCall)) {
-        // Add approval flow for function calls
-        const functionCallPart = message.parts.find(part => part.functionCall);
-        if (functionCallPart?.functionCall) {
-          transformed.push({
-            role: 'approval',
-            parts: [],
-            functionCallToApprove: functionCallPart.functionCall,
-            approval: { status: 'pending' }
-          });
+  // --- Transformation: UnifiedMessage[] → PlaybackHistory ---
+
+  const transformToPlayback = useCallback(
+    (messages: UnifiedMessage[], settings: DisplaySettings): PlaybackHistory => {
+      const filtered = messages.filter(msg => {
+        if (msg.role === 'thinking' && !settings.showThinking) return false;
+        if (msg.role === 'tool_call' && !settings.showToolCalls) return false;
+        if (msg.role === 'tool_result' && !settings.showToolResults) return false;
+        return true;
+      });
+
+      const playback: PlaybackHistory = [];
+
+      for (const msg of filtered) {
+        switch (msg.role) {
+          case 'assistant':
+            playback.push({ role: 'thinking_animation', content: '' });
+            playback.push({ role: 'assistant', content: msg.content });
+            break;
+
+          case 'tool_call':
+            if (settings.showToolCalls) {
+              playback.push({
+                role: 'approval',
+                content: '',
+                toolCall: msg.toolCall,
+                approval: { status: 'pending' },
+              });
+              playback.push({
+                role: 'tool_call',
+                content: msg.content,
+                toolCall: msg.toolCall,
+              });
+            }
+            break;
+
+          case 'thinking':
+            playback.push({ role: 'thinking', content: msg.content });
+            break;
+
+          case 'tool_result':
+            playback.push({
+              role: 'tool_result',
+              content: msg.content,
+              toolResult: msg.toolResult,
+            });
+            break;
+
+          default:
+            playback.push({ role: msg.role, content: msg.content });
         }
-        transformed.push(message);
-        continue;
       }
-      
-      // Handle regular assistant text messages - add thinking animation
-      if (message.role === 'model' && message.parts.some(part => part.text && !part.functionCall)) {
-        transformed.push({
-          role: 'thinking',
-          parts: []
-        });
-        transformed.push(message);
-        continue;
-      }
-      
-      // Default case: add message as-is
-      transformed.push(message);
+
+      return playback;
+    },
+    []
+  );
+
+  // Re-transform when conversation or display settings change
+  useEffect(() => {
+    if (!conversation) {
+      transformedHistoryRef.current = [];
+      setDisplayedHistory([]);
+      setCurrentMessageIndex(0);
+      currentIndexRef.current = 0;
+      return;
     }
-    
-    return transformed;
+
+    // Stop any running animation
+    isPausedRef.current = false;
+    animationInProgressRef.current = false;
+    setIsPaused(false);
+    setAnimationInProgress(false);
+    if (animationTimeoutRef.current) {
+      clearTimeout(animationTimeoutRef.current);
+      animationTimeoutRef.current = null;
+    }
+
+    const transformed = transformToPlayback(conversation, displaySettings);
+    transformedHistoryRef.current = transformed;
+    setDisplayedHistory([]);
+    setCurrentMessageIndex(0);
+    currentIndexRef.current = 0;
+  }, [conversation, displaySettings, transformToPlayback]);
+
+  // --- Playback Controls ---
+
+  const waitWithPauseCheck = (ms: number): Promise<boolean> => {
+    const speed = displaySettingsRef.current.playbackSpeed;
+    const adjustedMs = ms / speed;
+    return new Promise(resolve => {
+      const timeoutId = window.setTimeout(() => {
+        if (animationTimeoutRef.current === null) {
+          resolve(false);
+        } else {
+          resolve(true);
+        }
+      }, adjustedMs);
+      animationTimeoutRef.current = timeoutId;
+    });
   };
 
-  // Control functions for play/pause
   const pauseAnimation = () => {
     isPausedRef.current = true;
     setIsPaused(true);
@@ -115,16 +176,17 @@ const ChatContainer: React.FC = () => {
   const resumeAnimation = () => {
     isPausedRef.current = false;
     setIsPaused(false);
-    // Allow the React state to update before continuing the animation
     setTimeout(() => {
-      if (animationInProgressRef.current && currentIndexRef.current < transformedHistoryRef.current.length) {
+      if (
+        animationInProgressRef.current &&
+        currentIndexRef.current < transformedHistoryRef.current.length
+      ) {
         continueAnimation();
       }
     }, 0);
   };
 
   const restartAnimation = () => {
-    // Reset all control flags immediately
     isPausedRef.current = false;
     animationInProgressRef.current = false;
     setIsPaused(false);
@@ -136,221 +198,129 @@ const ChatContainer: React.FC = () => {
       clearTimeout(animationTimeoutRef.current);
       animationTimeoutRef.current = null;
     }
-    // Scroll to top when starting playback
     window.scrollTo({ top: 0, behavior: 'smooth' });
     if (transformedHistoryRef.current.length > 0) {
-      animateConversation(transformedHistoryRef.current);
+      animateConversation();
     }
   };
 
-  // Utility function for interruptible delays
-  const waitWithPauseCheck = (ms: number): Promise<boolean> => {
-    return new Promise((resolve) => {
-      const timeoutId = window.setTimeout(() => {
-        // Check if the timeout was cleared (meaning we were paused)
-        if (animationTimeoutRef.current === null) {
-          resolve(false);
-        } else {
-          resolve(true);
-        }
-      }, ms);
-      animationTimeoutRef.current = timeoutId;
-    });
-  };
-
-  // Continue animation from current position
-  const continueAnimation = async () => {
-    const transformedHistory = transformedHistoryRef.current;
-    console.log('continueAnimation starting from index:', currentIndexRef.current, 'total:', transformedHistory.length);
-    
-    for (let i = currentIndexRef.current; i < transformedHistory.length; i++) {
-      if (isPausedRef.current) {
-        console.log('Animation paused at index:', i);
-        break;
-      }
-      
-      const message = transformedHistory[i];
-      console.log('Processing message', i, ':', message.role);
-      setCurrentMessageIndex(i);
-      currentIndexRef.current = i;
-      
-      // Handle thinking messages specially
-      if (message.role === 'thinking') {
-        console.log('  -> Showing thinking animation');
-        // Show thinking animation
-        setDisplayedHistory(prev => [...prev, message]);
-        
-        // Wait for thinking duration
-        const shouldContinue = await waitWithPauseCheck(2000);
-        if (!shouldContinue) {
-          console.log('  -> Thinking interrupted by pause');
-          break;
-        }
-        
-        // Replace thinking with actual response (next message)
-        const nextMessage = transformedHistory[i + 1];
-        if (nextMessage) {
-          console.log('  -> Replacing thinking with:', nextMessage.role);
-          setDisplayedHistory(prev => {
-            const updated = [...prev];
-            const thinkingIdx = [...updated].reverse().findIndex(msg => msg.role === 'thinking');
-            const actualIdx = thinkingIdx === -1 ? -1 : updated.length - 1 - thinkingIdx;
-            if (actualIdx !== -1) {
-              updated[actualIdx] = nextMessage;
-            } else {
-              updated.push(nextMessage);
-            }
-            return updated;
-          });
-          i++; // Skip the next message since we just added it
-          setCurrentMessageIndex(i);
-      currentIndexRef.current = i;
-        }
-      } else if (message.role === 'approval') {
-        console.log('  -> Showing approval prompt');
-        // 1. Show pending approval card
-        setDisplayedHistory(prev => [...prev, message]);
-
-        // Give the user time to read the prompt
-        let shouldContinue = await waitWithPauseCheck(2500);
-        if (!shouldContinue) break;
-
-        // 2. Replace card with "approved / working" spinner
-        setDisplayedHistory(prev => {
-          const updated = [...prev];
-          if (updated.length > 0) {
-            updated[updated.length - 1] = { ...message, approval: { status: 'approved', action: 'yes' } };
-          }
-          return updated;
-        });
-
-        // Allow time for the spinner animation
-        shouldContinue = await waitWithPauseCheck(2000);
-        if (!shouldContinue) break;
-
-        // 3. Replace spinner card with the actual function call message
-        const nextMessage = transformedHistory[i + 1];
-        if (nextMessage) {
-          setDisplayedHistory(prev => {
-            const updated = [...prev];
-            if (updated.length > 0) {
-              updated[updated.length - 1] = nextMessage;
-            }
-            return updated;
-          });
-          i++; // Skip the next message; we've already shown it
-          setCurrentMessageIndex(i);
-      currentIndexRef.current = i;
-        }
-      } else {
-        console.log('  -> Adding regular message');
-        // Regular message handling
-        setDisplayedHistory(prev => [...prev, message]);
-        
-        // Determine delay based on message type
-        let delay = 500; // default delay
-        
-        if (message.role === 'model' && message.parts.some(part => part.functionCall)) {
-          delay = 1000;
-        } else if (message.role === 'user') {
-          delay = 300;
-        }
-        
-        // Wait before next message
-        if (i < transformedHistory.length - 1) {
-          const shouldContinue = await waitWithPauseCheck(delay);
-          if (!shouldContinue) break;
-        }
-      }
-    }
-    
-    if (!isPausedRef.current) {
-      animationInProgressRef.current = false;
-      setAnimationInProgress(false);
-      setCurrentMessageIndex(0);
-    }
-  };
-
-  // Simulate realistic conversation flow with animations
-  const animateConversation = async (transformedHistory: ChatHistory) => {
-    console.log('animateConversation called, inProgress:', animationInProgressRef.current, 'paused:', isPausedRef.current);
-    
-    if (animationInProgressRef.current && !isPausedRef.current) {
-      console.log('Animation already running, skipping');
-      return;
-    }
-    
-    console.log('Starting animation with', transformedHistory.length, 'messages');
-    transformedHistoryRef.current = transformedHistory;
+  const animateConversation = async () => {
     animationInProgressRef.current = true;
     setAnimationInProgress(true);
-    isPausedRef.current = false;
-    setIsPaused(false);
     setCurrentMessageIndex(0);
     currentIndexRef.current = 0;
     setDisplayedHistory([]);
-    
-    // Small delay to ensure smooth transition from loading
     await new Promise(resolve => setTimeout(resolve, 100));
-    
     continueAnimation();
   };
 
-  const handleApprovalAction = (_action: 'yes' | 'no' | 'end') => {
-    // In this demo, we always simulate "yes" approval
-    // This is just for the animation effect
-  };
+  const continueAnimation = async () => {
+    const transformedHistory = transformedHistoryRef.current;
 
-  const fetchChatHistory = async (pageNumber: number) => {
-    console.log('fetchChatHistory called with page:', pageNumber, 'initialized:', initialized);
-    
-    // Prevent multiple initializations
-    if (pageNumber === 1 && initialized) {
-      console.log('Already initialized, skipping');
-      return;
-    }
-    
-    setLoading(true);
-    try {
-      const response = await fetch(`/api/chat?page=${pageNumber}`);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      const newHistory = [...chatHistory, ...data.messages];
-      setChatHistory(newHistory);
-      setHasMore(data.hasMore);
-      setLoading(false);
-      setInitialized(true);
-      
-      // Transform and store the conversation (don't auto-start, wait for user to hit play)
-      const transformed = transformChatHistory(newHistory);
-      transformedHistoryRef.current = transformed;
-    } catch (error) {
-      console.warn("Remote API unavailable, falling back to local JSON file.");
-      try {
-        // Lazy-import the raw JSON string via Vite and parse it
-        const rawJson = (await import('../chat_history.json?raw')).default as string;
-        const localMessages = JSON.parse(rawJson) as ChatHistory;
-        setChatHistory(localMessages);
-        setHasMore(false);
-        setLoading(false);
-        setInitialized(true);
-        
-        // Transform and store the conversation (don't auto-start, wait for user to hit play)
-        const transformed = transformChatHistory(localMessages);
-        transformedHistoryRef.current = transformed;
-      } catch (localErr) {
-        console.error('Failed to load local chat history:', localErr);
-        setLoading(false);
-        setInitialized(true);
+    for (let i = currentIndexRef.current; i < transformedHistory.length; i++) {
+      if (isPausedRef.current || !animationInProgressRef.current) {
+        setCurrentMessageIndex(i);
+        currentIndexRef.current = i;
+        return;
+      }
+
+      const message = transformedHistory[i];
+
+      if (message.role === 'thinking_animation') {
+        setDisplayedHistory(prev => [...prev, message]);
+        setCurrentMessageIndex(i);
+
+        const waited = await waitWithPauseCheck(2000);
+        if (!waited || isPausedRef.current) {
+          currentIndexRef.current = i;
+          return;
+        }
+
+        const nextMessage = transformedHistory[i + 1];
+        if (nextMessage) {
+          setDisplayedHistory(prev => {
+            const updated = [...prev];
+            updated[updated.length - 1] = nextMessage;
+            return updated;
+          });
+          i++;
+          setCurrentMessageIndex(i);
+
+          const waited2 = await waitWithPauseCheck(1000);
+          if (!waited2 || isPausedRef.current) {
+            currentIndexRef.current = i + 1;
+            return;
+          }
+        }
+        continue;
+      }
+
+      if (message.role === 'approval') {
+        setDisplayedHistory(prev => [...prev, message]);
+        setCurrentMessageIndex(i);
+
+        const waited = await waitWithPauseCheck(2500);
+        if (!waited || isPausedRef.current) {
+          currentIndexRef.current = i;
+          return;
+        }
+
+        setDisplayedHistory(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            ...message,
+            approval: { status: 'approved' },
+          };
+          return updated;
+        });
+
+        const waited2 = await waitWithPauseCheck(2000);
+        if (!waited2 || isPausedRef.current) {
+          currentIndexRef.current = i + 1;
+          return;
+        }
+
+        const nextMessage = transformedHistory[i + 1];
+        if (nextMessage && nextMessage.role === 'tool_call') {
+          setDisplayedHistory(prev => {
+            const updated = [...prev];
+            updated[updated.length - 1] = nextMessage;
+            return updated;
+          });
+          i++;
+          setCurrentMessageIndex(i);
+
+          const waited3 = await waitWithPauseCheck(500);
+          if (!waited3 || isPausedRef.current) {
+            currentIndexRef.current = i + 1;
+            return;
+          }
+        }
+        continue;
+      }
+
+      // Regular messages: user, assistant, thinking, tool_call, tool_result
+      setDisplayedHistory(prev => [...prev, message]);
+      setCurrentMessageIndex(i);
+
+      let delay = 500;
+      if (message.role === 'user') delay = 800;
+      else if (message.role === 'assistant') delay = 1000;
+      else if (message.role === 'thinking') delay = 1500;
+      else if (message.role === 'tool_result') delay = 300;
+
+      const waited = await waitWithPauseCheck(delay);
+      if (!waited || isPausedRef.current) {
+        currentIndexRef.current = i + 1;
+        return;
       }
     }
+
+    animationInProgressRef.current = false;
+    setAnimationInProgress(false);
+    setCurrentMessageIndex(transformedHistory.length);
   };
 
-  useEffect(() => {
-    fetchChatHistory(1);
-  }, []);
-
-  // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
       if (animationTimeoutRef.current) {
@@ -359,186 +329,153 @@ const ChatContainer: React.FC = () => {
     };
   }, []);
 
-  const handleLoadMore = () => {
-    const nextPage = page + 1;
-    setPage(nextPage);
-    fetchChatHistory(nextPage);
-  };
+  // --- Render ---
+
+  const totalMessages = transformedHistoryRef.current.length;
+  const hasConversation = conversation && conversation.length > 0;
 
   return (
-    <Box sx={{ 
-      width: '100vw', 
-      minHeight: '100vh',
-      display: 'flex',
-      flexDirection: 'column',
-    }}>
-      <AppBar position="static" color="primary" sx={{ width: '100%', flexShrink: 0 }}>
-        <Toolbar>
-          <ChatIcon sx={{ mr: 2 }} />
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            StockSavvy Support Chat Simulator
-          </Typography>
-          <Chip 
-            icon={<BugIcon />}
-            label="Database Pool Exhaustion Investigation"
-            color="secondary"
-            variant="outlined"
-          />
-        </Toolbar>
-      </AppBar>
-
-      <Box sx={{ 
-        width: '100%', 
-        display: 'flex', 
-        justifyContent: 'center', 
-        flexGrow: 1,
-        mt: animationInProgress ? 0 : 3, 
-        mb: animationInProgress ? 0 : 3,
-        overflow: 'hidden',
-      }}>
-        <Box sx={{ 
-          width: '66%', 
-          minWidth: 600, 
-          maxWidth: 1200,
-          display: 'flex',
-          flexDirection: 'column',
-          height: '100%',
-        }}>
-
-        {/* Header card - hidden during playback */}
-        {!animationInProgress && (
-          <Paper elevation={1} sx={{ p: 3, mb: 3, bgcolor: 'grey.900', borderRadius: 2 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-              <Typography variant="h5" component="h1">
-                Support Investigation Chat
-              </Typography>
-            </Box>
-            <Typography variant="body2" color="text.secondary" paragraph>
-              This chat demonstrates a support engineer working with an AI assistant to investigate 
-              a "database connection pool exhaustion" alert for the StockSavvy SaaS application. 
-              The investigation includes searching Confluence runbooks and analyzing Splunk logs.
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-              <Chip size="small" label="Confluence Integration" />
-              <Chip size="small" label="Splunk Analysis" />
-              <Chip size="small" label="SRE Runbook" />
-              <Chip size="small" label="Database Troubleshooting" />
-            </Box>
-            
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-              Press the play button in the bottom right to start the demo.
-            </Typography>
-          </Paper>
-        )}
-
-        {!animationInProgress && <Divider sx={{ mb: 3 }} />}
-
-        {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-            <CircularProgress />
-          </Box>
-        ) : (
-          <Box sx={{ 
-            flexGrow: 1,
-            overflow: 'auto', 
-            pr: 1,
-            pb: animationInProgress ? 10 : 0, // Extra padding at bottom during playback for floating controls
-          }}>
-            {displayedHistory.map((message, index) => (
-              <ChatMessage 
-                key={index} 
-                message={message} 
-                index={index}
-                onApprovalAction={handleApprovalAction}
-              />
-            ))}
-            <div ref={messagesEndRef} />
-          </Box>
-        )}
-
-        {hasMore && !loading && !animationInProgress && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2, flexShrink: 0 }}>
-            <Button variant="contained" onClick={handleLoadMore}>
-              Load More
-            </Button>
-          </Box>
-        )}
-
-        {/* Footer - hidden during playback */}
-        {!animationInProgress && (
-          <Paper elevation={0} sx={{ mt: 3, p: 2, bgcolor: 'grey.50', flexShrink: 0 }}>
-            <Typography variant="caption" color="text.secondary" align="center" display="block">
-              Chat contains {displayedHistory.length} messages • 
-              Built with React, TypeScript, Vite & Material-UI
-            </Typography>
-          </Paper>
-        )}
-        </Box>
-      </Box>
-
-      {/* Floating Playback Controls */}
+    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      {/* Header */}
       <Paper
-        elevation={6}
+        elevation={0}
         sx={{
-          position: 'fixed',
-          bottom: 24,
-          right: 24,
-          zIndex: 1000,
-          borderRadius: 8,
-          bgcolor: 'grey.900',
-          p: 1,
+          p: 2,
+          borderBottom: 1,
+          borderColor: 'divider',
           display: 'flex',
           alignItems: 'center',
-          gap: 1,
+          gap: 2,
         }}
       >
-        {/* Progress indicator */}
-        {animationInProgress && (
-          <Typography variant="caption" color="text.secondary" sx={{ px: 1 }}>
-            {currentMessageIndex + 1} / {transformedHistoryRef.current.length}
+        <Box sx={{ flex: 1 }}>
+          <Typography variant="h6" sx={{ fontSize: '1.1rem' }}>
+            {conversationInfo?.title || 'Select a conversation'}
           </Typography>
+          {conversationInfo && (
+            <Typography variant="caption" color="text.secondary">
+              {conversationInfo.projectName} &middot; {conversationInfo.sourceId}
+              {totalMessages > 0 && ` \u00B7 ${totalMessages} steps`}
+            </Typography>
+          )}
+        </Box>
+
+        {hasConversation && animationInProgress && (
+          <Chip
+            size="small"
+            label={`${currentMessageIndex} / ${totalMessages}`}
+            color="primary"
+            variant="outlined"
+          />
         )}
-        
-        {/* Restart button */}
-        <Tooltip title="Restart">
-          <span>
-            <Fab
-              size="small"
-              color="default"
-              onClick={restartAnimation}
-              disabled={loading}
-              sx={{ bgcolor: 'grey.800', '&:hover': { bgcolor: 'grey.700' } }}
-            >
-              <RestartIcon />
-            </Fab>
-          </span>
-        </Tooltip>
-        
-        {/* Play/Pause button */}
-        <Tooltip title={animationInProgress && !isPaused ? 'Pause' : isPaused ? 'Resume' : 'Play'}>
-          <span>
-            <Fab
-              color={animationInProgress && !isPaused ? 'secondary' : 'primary'}
-              onClick={() => {
-                if (animationInProgress && !isPaused) {
-                  pauseAnimation();
-                } else if (isPaused) {
-                  resumeAnimation();
-                } else {
-                  restartAnimation();
-                }
-              }}
-              disabled={loading}
-              sx={{
-                width: 56,
-                height: 56,
-              }}
-            >
-              {animationInProgress && !isPaused ? <PauseIcon /> : <PlayIcon />}
-            </Fab>
-          </span>
-        </Tooltip>
       </Paper>
+
+      {/* Messages */}
+      <Box
+        sx={{
+          flex: 1,
+          overflow: 'auto',
+          p: 2,
+          pb: 12,
+        }}
+      >
+        {!hasConversation && (
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '60vh',
+              color: 'text.secondary',
+            }}
+          >
+            <Typography variant="h5" gutterBottom>
+              Chat Playback
+            </Typography>
+            <Typography variant="body2">
+              Select a conversation from the sidebar to begin playback.
+            </Typography>
+          </Box>
+        )}
+
+        {hasConversation && !animationInProgress && displayedHistory.length === 0 && (
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '60vh',
+              color: 'text.secondary',
+            }}
+          >
+            <Typography variant="body1" gutterBottom>
+              Ready to play back conversation
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Press the play button to start.
+            </Typography>
+          </Box>
+        )}
+
+        {displayedHistory.map((message, index) => (
+          <ChatMessage key={index} message={message} index={index} />
+        ))}
+
+        <div ref={messagesEndRef} />
+      </Box>
+
+      <Divider />
+
+      {/* Floating playback controls */}
+      {hasConversation && (
+        <Box
+          sx={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            display: 'flex',
+            gap: 1,
+            zIndex: 1000,
+          }}
+        >
+          {!animationInProgress ? (
+            <Tooltip title="Play">
+              <Fab color="primary" onClick={animateConversation} size="medium">
+                <PlayIcon />
+              </Fab>
+            </Tooltip>
+          ) : isPaused ? (
+            <Tooltip title="Resume">
+              <Fab color="primary" onClick={resumeAnimation} size="medium">
+                <PlayIcon />
+              </Fab>
+            </Tooltip>
+          ) : (
+            <Tooltip title="Pause">
+              <Fab color="secondary" onClick={pauseAnimation} size="medium">
+                <PauseIcon />
+              </Fab>
+            </Tooltip>
+          )}
+
+          {(animationInProgress || displayedHistory.length > 0) && (
+            <Tooltip title="Restart">
+              <Fab onClick={restartAnimation} size="small" sx={{ bgcolor: 'grey.700' }}>
+                <RestartIcon />
+              </Fab>
+            </Tooltip>
+          )}
+        </Box>
+      )}
+
+      {/* Loading indicator */}
+      {!conversation && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+          <CircularProgress size={24} />
+        </Box>
+      )}
     </Box>
   );
 };

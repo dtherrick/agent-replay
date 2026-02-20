@@ -9,8 +9,6 @@ import {
   AccordionSummary,
   AccordionDetails,
   Paper,
-  Button,
-  CircularProgress,
   Fade,
   LinearProgress,
 } from '@mui/material';
@@ -19,77 +17,63 @@ import {
   Person as PersonIcon,
   SmartToy as BotIcon,
   Code as CodeIcon,
-  Settings as SettingsIcon,
-  CheckCircle as CheckIcon,
-  Cancel as CancelIcon,
-  ExitToApp as EndIcon,
   Psychology as ThinkingIcon,
-  Build as SystemIcon,
+  Build as ToolIcon,
+  Output as ResultIcon,
+  CheckCircle as ApprovedIcon,
 } from '@mui/icons-material';
-import type { ChatMessageType, ChatPart, ApprovalState } from '../types/chat';
+import type { PlaybackMessage } from '../types/chat';
 import ReactMarkdown from 'react-markdown';
 
 interface ChatMessageProps {
-  message: ChatMessageType;
+  message: PlaybackMessage;
   index: number;
-  onApprovalAction?: (action: 'yes' | 'no' | 'end') => void;
 }
 
-const ThinkingAnimation: React.FC = () => {
-  return (
-    <Fade in timeout={500}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2 }}>
-        <ThinkingIcon color="secondary" />
-        <Typography variant="body2" color="text.secondary">
-          Assistant is thinking
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 0.5 }}>
-          {[0, 1, 2].map((i) => (
-            <Box
-              key={i}
-              sx={{
-                width: 6,
-                height: 6,
-                borderRadius: '50%',
-                bgcolor: 'secondary.main',
-                animation: 'pulse 1.5s infinite',
-                animationDelay: `${i * 0.2}s`,
-                '@keyframes pulse': {
-                  '0%, 80%, 100%': { opacity: 0.3, transform: 'scale(0.8)' },
-                  '40%': { opacity: 1, transform: 'scale(1)' },
-                },
-              }}
-            />
-          ))}
-        </Box>
+// --- Thinking dots animation ---
+const ThinkingAnimation: React.FC = () => (
+  <Fade in timeout={500}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2 }}>
+      <ThinkingIcon color="secondary" />
+      <Typography variant="body2" color="text.secondary">
+        Assistant is thinking
+      </Typography>
+      <Box sx={{ display: 'flex', gap: 0.5 }}>
+        {[0, 1, 2].map(i => (
+          <Box
+            key={i}
+            sx={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              bgcolor: 'secondary.main',
+              animation: 'pulse 1.5s infinite',
+              animationDelay: `${i * 0.2}s`,
+              '@keyframes pulse': {
+                '0%, 80%, 100%': { opacity: 0.3, transform: 'scale(0.8)' },
+                '40%': { opacity: 1, transform: 'scale(1)' },
+              },
+            }}
+          />
+        ))}
       </Box>
-    </Fade>
-  );
-};
+    </Box>
+  </Fade>
+);
 
-const ApprovalFlow: React.FC<{ 
-  functionCall: any, 
-  approval: ApprovalState, 
-  onAction: (action: 'yes' | 'no' | 'end') => void 
-}> = ({ functionCall, approval, onAction }) => {
-  const [showWorking, setShowWorking] = React.useState(false);
+// --- Approval flow ---
+const ApprovalDisplay: React.FC<{ message: PlaybackMessage }> = ({ message }) => {
+  const isApproved = message.approval?.status === 'approved';
+  const toolName = message.toolCall?.name || 'unknown';
 
-  React.useEffect(() => {
-    if (approval.status === 'approved') {
-      setShowWorking(true);
-      const timer = setTimeout(() => setShowWorking(false), 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [approval.status]);
-
-  if (showWorking) {
+  if (isApproved) {
     return (
       <Fade in>
         <Box sx={{ p: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-            <CircularProgress size={16} />
+            <ApprovedIcon color="success" sx={{ fontSize: 18 }} />
             <Typography variant="body2" color="text.secondary">
-              Executing function: {functionCall.name}
+              Approved: {toolName}
             </Typography>
           </Box>
           <LinearProgress variant="indeterminate" sx={{ height: 2, borderRadius: 1 }} />
@@ -98,116 +82,97 @@ const ApprovalFlow: React.FC<{
     );
   }
 
-  if (approval.status === 'pending') {
-    return (
-      <Box sx={{ p: 2, bgcolor: 'warning.dark', borderRadius: 1, mb: 1 }}>
-        <Typography variant="body2" gutterBottom>
-          <strong>Function Call Approval Required:</strong> {functionCall.name}
-        </Typography>
-        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
-          The assistant wants to call a function. Do you approve?
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button 
-            size="small" 
-            variant="contained" 
-            color="success"
-            startIcon={<CheckIcon />}
-            onClick={() => onAction('yes')}
-          >
-            Yes
-          </Button>
-          <Button 
-            size="small" 
-            variant="outlined" 
-            color="error"
-            startIcon={<CancelIcon />}
-            onClick={() => onAction('no')}
-          >
-            No
-          </Button>
-          <Button 
-            size="small" 
-            variant="outlined" 
-            startIcon={<EndIcon />}
-            onClick={() => onAction('end')}
-          >
-            End Chat
-          </Button>
-        </Box>
-      </Box>
-    );
-  }
-
-  return null;
+  return (
+    <Box sx={{ p: 2, bgcolor: 'warning.dark', borderRadius: 1 }}>
+      <Typography variant="body2" gutterBottom>
+        <strong>Tool Call Approval:</strong> {toolName}
+      </Typography>
+      <Typography variant="caption" color="text.secondary" display="block">
+        The assistant wants to use a tool. Approve?
+      </Typography>
+    </Box>
+  );
 };
 
-const FunctionCallDisplay: React.FC<{ part: ChatPart }> = ({ part }) => {
-  if (!part.functionCall) return null;
-  
+// --- Tool call display ---
+const ToolCallDisplay: React.FC<{ message: PlaybackMessage }> = ({ message }) => {
+  if (!message.toolCall) return null;
+
+  const hasArgs = Object.keys(message.toolCall.args).length > 0;
+  const argEntries = Object.entries(message.toolCall.args);
+  const truncatedArgs: Record<string, string> = {};
+  for (const [key, value] of argEntries) {
+    truncatedArgs[key] = value.length > 200 ? value.substring(0, 200) + '...' : value;
+  }
+
   return (
-    <Accordion sx={{ mt: 1 }}>
+    <Accordion sx={{ mt: 0 }} defaultExpanded={!hasArgs || argEntries.length <= 3}>
       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <CodeIcon color="primary" />
+          <CodeIcon color="primary" sx={{ fontSize: 18 }} />
           <Typography variant="body2" fontWeight="bold">
-            Function Call: {part.functionCall.name}
+            {message.toolCall.name}
           </Typography>
         </Box>
       </AccordionSummary>
-      <AccordionDetails>
-        <Paper sx={{ p: 2, bgcolor: 'grey.800', color: 'grey.100', borderRadius: 2 }}>
-          <Typography variant="body2" color="text.secondary" gutterBottom>
-            Arguments:
-          </Typography>
-          <Box component="pre" sx={{ 
-            fontFamily: 'monospace', 
-            fontSize: '0.8rem',
-            overflow: 'auto',
-            whiteSpace: 'pre-wrap'
-          }}>
-            {JSON.stringify(part.functionCall.args, null, 2)}
-          </Box>
-        </Paper>
-      </AccordionDetails>
+      {hasArgs && (
+        <AccordionDetails>
+          <Paper sx={{ p: 1.5, bgcolor: 'grey.800', borderRadius: 1 }}>
+            <Box
+              component="pre"
+              sx={{
+                fontFamily: 'monospace',
+                fontSize: '0.75rem',
+                overflow: 'auto',
+                whiteSpace: 'pre-wrap',
+                m: 0,
+                maxHeight: 300,
+              }}
+            >
+              {JSON.stringify(truncatedArgs, null, 2)}
+            </Box>
+          </Paper>
+        </AccordionDetails>
+      )}
     </Accordion>
   );
 };
 
-const FunctionResponseDisplay: React.FC<{ part: ChatPart }> = ({ part }) => {
-  if (!part.functionResponse) return null;
+// --- Tool result display ---
+const ToolResultDisplay: React.FC<{ message: PlaybackMessage }> = ({ message }) => {
+  if (!message.toolResult) return null;
 
-  // Attempt to pretty-print JSON if the output looks like valid JSON
-  let formattedOutput: string = part.functionResponse.response.output;
+  let formattedOutput = message.toolResult.output;
   try {
     const parsed = JSON.parse(formattedOutput);
     formattedOutput = JSON.stringify(parsed, null, 2);
-  } catch (err) {
-    // Leave output unchanged if it's not valid JSON
+  } catch {
+    // leave as-is
   }
-  
+
   return (
-    <Accordion sx={{ mt: 1 }}>
+    <Accordion sx={{ mt: 0 }}>
       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <SettingsIcon color="secondary" />
+          <ResultIcon color="info" sx={{ fontSize: 18 }} />
           <Typography variant="body2" fontWeight="bold">
-            Function Response: {part.functionResponse.name}
+            Result: {message.toolResult.name}
           </Typography>
         </Box>
       </AccordionSummary>
       <AccordionDetails>
-        <Paper sx={{ p: 2, bgcolor: 'grey.800', color: 'grey.100', borderRadius: 2 }}>
-          <Typography variant="body2" color="text.secondary" gutterBottom>
-            Output:
-          </Typography>
-          <Box component="pre" sx={{ 
-            fontFamily: 'monospace', 
-            fontSize: '0.8rem',
-            overflow: 'auto',
-            whiteSpace: 'pre-wrap',
-            maxHeight: '300px'
-          }}>
+        <Paper sx={{ p: 1.5, bgcolor: 'grey.800', borderRadius: 1 }}>
+          <Box
+            component="pre"
+            sx={{
+              fontFamily: 'monospace',
+              fontSize: '0.75rem',
+              overflow: 'auto',
+              whiteSpace: 'pre-wrap',
+              m: 0,
+              maxHeight: 300,
+            }}
+          >
             {formattedOutput}
           </Box>
         </Paper>
@@ -216,17 +181,16 @@ const FunctionResponseDisplay: React.FC<{ part: ChatPart }> = ({ part }) => {
   );
 };
 
-const ChatMessage: React.FC<ChatMessageProps> = ({ message, index, onApprovalAction }) => {
-  // Handle thinking animation
-  if (message.role === 'thinking') {
+// --- Main ChatMessage component ---
+const ChatMessage: React.FC<ChatMessageProps> = ({ message, index }) => {
+  if (message.role === 'thinking_animation') {
     return (
       <Box sx={{ display: 'flex', flexDirection: 'row', mb: 2 }}>
-        <Box sx={{ width: 72, display: 'flex', flexDirection: 'column', alignItems: 'center', px: 1 }}>
+        <Box sx={{ width: 56, display: 'flex', flexDirection: 'column', alignItems: 'center', px: 1 }}>
           <BotIcon color="secondary" />
-          <Typography variant="caption" color="text.secondary">#{index + 1}</Typography>
         </Box>
         <Card sx={{ flex: 1, bgcolor: 'grey.900', borderRadius: 2 }}>
-          <CardContent>
+          <CardContent sx={{ '&:last-child': { pb: 2 } }}>
             <ThinkingAnimation />
           </CardContent>
         </Card>
@@ -234,21 +198,15 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, index, onApprovalAct
     );
   }
 
-  // Handle approval flow
-  if (message.role === 'approval' && message.functionCallToApprove && message.approval) {
+  if (message.role === 'approval') {
     return (
       <Box sx={{ display: 'flex', flexDirection: 'row', mb: 2 }}>
-        <Box sx={{ width: 72, display: 'flex', flexDirection: 'column', alignItems: 'center', px: 1 }}>
-          <PersonIcon color="primary" />
-          <Typography variant="caption" color="text.secondary">#{index + 1}</Typography>
+        <Box sx={{ width: 56, display: 'flex', flexDirection: 'column', alignItems: 'center', px: 1 }}>
+          <ToolIcon color="warning" />
         </Box>
         <Card sx={{ flex: 1, bgcolor: 'warning.main', borderRadius: 2 }}>
-          <CardContent>
-            <ApprovalFlow 
-              functionCall={message.functionCallToApprove}
-              approval={message.approval}
-              onAction={onApprovalAction || (() => {})}
-            />
+          <CardContent sx={{ '&:last-child': { pb: 2 } }}>
+            <ApprovalDisplay message={message} />
           </CardContent>
         </Card>
       </Box>
@@ -256,78 +214,91 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, index, onApprovalAct
   }
 
   const isUser = message.role === 'user';
-  const isSystem = message.role === 'system';
-  
-  // Get appropriate icon and styling
+  const isThinking = message.role === 'thinking';
+  const isToolCall = message.role === 'tool_call';
+  const isToolResult = message.role === 'tool_result';
+
   const getIcon = () => {
     if (isUser) return <PersonIcon color="primary" />;
-    if (isSystem) return <SystemIcon color="info" />;
+    if (isThinking) return <ThinkingIcon color="secondary" />;
+    if (isToolCall) return <ToolIcon color="info" />;
+    if (isToolResult) return <ResultIcon color="info" />;
     return <BotIcon color="secondary" />;
   };
 
   const getLabel = () => {
     if (isUser) return 'User';
-    if (isSystem) return 'System';
+    if (isThinking) return 'Thinking';
+    if (isToolCall) return 'Tool Call';
+    if (isToolResult) return 'Tool Result';
     return 'Assistant';
   };
 
   const getBgColor = () => {
     if (isUser) return 'primary.main';
-    if (isSystem) return 'info.dark';
+    if (isThinking) return 'grey.800';
+    if (isToolCall) return 'info.dark';
+    if (isToolResult) return 'info.dark';
     return 'grey.900';
   };
 
-  const getChipColor = () => {
+  const getChipColor = (): 'primary' | 'secondary' | 'info' | 'warning' | 'default' => {
     if (isUser) return 'primary';
-    if (isSystem) return 'info';
+    if (isThinking) return 'warning';
+    if (isToolCall || isToolResult) return 'info';
     return 'secondary';
   };
-  
+
   return (
     <Box sx={{ display: 'flex', flexDirection: isUser ? 'row-reverse' : 'row', mb: 2 }}>
-      <Box sx={{ width: 72, display: 'flex', flexDirection: 'column', alignItems: 'center', px: 1 }}>
+      <Box sx={{ width: 56, display: 'flex', flexDirection: 'column', alignItems: 'center', px: 1 }}>
         {getIcon()}
-        <Typography variant="caption" color="text.secondary">#{index + 1}</Typography>
+        <Typography variant="caption" color="text.secondary">
+          #{index + 1}
+        </Typography>
       </Box>
-      <Card 
-        sx={{ 
-          flex: 1,
-          bgcolor: getBgColor(),
-          borderRadius: 2
-        }}
-      >
-        <CardContent>
+      <Card sx={{ flex: 1, bgcolor: getBgColor(), borderRadius: 2, opacity: isThinking ? 0.85 : 1 }}>
+        <CardContent sx={{ '&:last-child': { pb: 2 } }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-            <Chip 
-              label={getLabel()} 
-              size="small" 
-              color={getChipColor()}
-            />
+            <Chip label={getLabel()} size="small" color={getChipColor()} />
             <Typography variant="caption" color="text.secondary">
-              Message #{index + 1}
+              #{index + 1}
             </Typography>
           </Box>
-          
-          {message.parts.map((part, partIndex) => (
-            <Box key={partIndex}>
-              {part.text && (
-                <Box
-                  sx={{
-                    typography: 'body1',
-                    whiteSpace: 'pre-wrap',
-                    color: isUser ? 'primary.contrastText' : 'text.primary',
-                    '& p': { m: 0, mb: 1 },
-                    '& code': { bgcolor: 'grey.900', color: 'secondary.light', px: 0.5, borderRadius: 1 },
-                    '& pre': { bgcolor: 'grey.900', p: 1, borderRadius: 1, overflow: 'auto' }
-                  }}
-                >
-                  <ReactMarkdown>{part.text}</ReactMarkdown>
-                </Box>
-              )}
-              <FunctionCallDisplay part={part} />
-              <FunctionResponseDisplay part={part} />
+
+          {/* Text content */}
+          {message.content && !isToolCall && !isToolResult && (
+            <Box
+              sx={{
+                typography: 'body1',
+                whiteSpace: 'pre-wrap',
+                color: isUser ? 'primary.contrastText' : 'text.primary',
+                fontSize: isThinking ? '0.875rem' : undefined,
+                fontStyle: isThinking ? 'italic' : undefined,
+                '& p': { m: 0, mb: 1 },
+                '& code': {
+                  bgcolor: 'grey.900',
+                  color: 'secondary.light',
+                  px: 0.5,
+                  borderRadius: 1,
+                },
+                '& pre': {
+                  bgcolor: 'grey.900',
+                  p: 1,
+                  borderRadius: 1,
+                  overflow: 'auto',
+                },
+              }}
+            >
+              <ReactMarkdown>{message.content}</ReactMarkdown>
             </Box>
-          ))}
+          )}
+
+          {/* Tool call details */}
+          {isToolCall && <ToolCallDisplay message={message} />}
+
+          {/* Tool result details */}
+          {isToolResult && <ToolResultDisplay message={message} />}
         </CardContent>
       </Card>
     </Box>
