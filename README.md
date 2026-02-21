@@ -16,33 +16,24 @@ A React application for browsing and playing back AI agent conversations with fu
 - **Multi-format Parsing** -- Cursor `.txt` transcripts (with `[Thinking]`, `[Tool call]`, `[Tool result]` markers) and `.jsonl` transcripts are both supported.
 - **Cross-platform** -- Project discovery works on macOS, Linux, and Windows.
 
-## Getting Started
-
-### Prerequisites
-
-- Node.js (v18 or higher)
-- npm
-
-### Installation
+## Quick Start
 
 ```bash
+git clone <repository-url>
+cd agent-replay
 npm install
-```
-
-### Development
-
-```bash
 npm run dev
 ```
 
 Open `http://localhost:5173` in your browser. The sidebar will automatically discover your local Cursor projects and Gemini chat files.
 
-### Production Build
+> **Note:** The API that reads your local transcripts runs as a Vite dev server plugin, so `npm run dev` is the intended way to use this tool. The production build (`npm run build`) generates a static frontend only.
 
-```bash
-npm run build
-npm run preview
-```
+### Prerequisites
+
+- Node.js (v18 or higher)
+- npm
+- `sqlite3` CLI (optional, for conversation titles -- install via `brew install sqlite3` on macOS or your system package manager)
 
 ## Project Structure
 
@@ -83,12 +74,24 @@ interface ChatSourceAdapter {
 
 Then register it in `src/server/adapters/registry.ts`.
 
+## Testing
+
+The test suite uses [Vitest](https://vitest.dev/) and covers the Cursor adapter (JSONL/TXT parsing, content extraction, error handling) and the API middleware (routing, error responses).
+
+```bash
+npm test              # single run
+npm run test:watch    # watch mode -- re-runs on file changes
+```
+
 ## Scripts
 
-- `npm run dev` -- Start development server with API middleware
-- `npm run build` -- Type-check and build for production
-- `npm run preview` -- Preview production build
-- `npm run lint` -- Run ESLint
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start the app (dev server with API middleware) |
+| `npm test` | Run the test suite |
+| `npm run test:watch` | Run tests in watch mode |
+| `npm run build` | Type-check and build static frontend |
+| `npm run lint` | Run ESLint |
 
 ## License
 

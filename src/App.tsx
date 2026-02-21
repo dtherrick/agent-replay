@@ -7,6 +7,8 @@ import {
   Divider,
   IconButton,
   Tooltip,
+  Snackbar,
+  Alert,
 } from '@mui/material';
 import { Menu as MenuIcon, ChevronLeft as CloseIcon } from '@mui/icons-material';
 import ChatContainer from './components/ChatContainer';
@@ -28,6 +30,8 @@ const theme = createTheme({
   },
 });
 
+const SETTINGS_KEY = 'agent-replay-display-settings';
+
 const defaultDisplaySettings: DisplaySettings = {
   showThinking: true,
   showToolCalls: true,
@@ -35,29 +39,56 @@ const defaultDisplaySettings: DisplaySettings = {
   playbackSpeed: 1,
 };
 
+function loadDisplaySettings(): DisplaySettings {
+  try {
+    const stored = localStorage.getItem(SETTINGS_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return { ...defaultDisplaySettings, ...parsed };
+    }
+  } catch {
+    // Corrupted or unavailable localStorage
+  }
+  return defaultDisplaySettings;
+}
+
+function saveDisplaySettings(settings: DisplaySettings): void {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  } catch {
+    // localStorage full or unavailable
+  }
+}
+
 function App() {
   const [drawerOpen, setDrawerOpen] = useState(true);
   const [conversation, setConversation] = useState<UnifiedMessage[] | null>(null);
   const [conversationInfo, setConversationInfo] = useState<ConversationInfo | null>(null);
-  const [displaySettings, setDisplaySettings] = useState<DisplaySettings>(defaultDisplaySettings);
+  const [displaySettings, setDisplaySettings] = useState<DisplaySettings>(loadDisplaySettings);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const handleSelectConversation = useCallback(async (info: ConversationInfo) => {
     setConversationInfo(info);
     setConversation(null);
     setLoading(true);
+    setLoadError(null);
 
     try {
       const params = info.projectId ? `?projectId=${info.projectId}` : '';
       const url = `/api/sources/${info.sourceId}/conversations/${encodeURIComponent(info.id)}${params}`;
       const response = await fetch(url);
 
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${response.status}`);
+      }
 
       const messages: UnifiedMessage[] = await response.json();
       setConversation(messages);
     } catch (err) {
       console.error('Failed to load conversation:', err);
+      setLoadError(err instanceof Error ? err.message : 'Failed to load conversation');
       setConversation([]);
     } finally {
       setLoading(false);
@@ -97,7 +128,10 @@ function App() {
 
           <Divider />
 
-          <DisplayControls settings={displaySettings} onChange={setDisplaySettings} />
+          <DisplayControls
+            settings={displaySettings}
+            onChange={(s) => { setDisplaySettings(s); saveDisplaySettings(s); }}
+          />
         </Drawer>
 
         {/* Main content */}
@@ -131,6 +165,17 @@ function App() {
             displaySettings={displaySettings}
           />
         </Box>
+
+        <Snackbar
+          open={!!loadError}
+          autoHideDuration={6000}
+          onClose={() => setLoadError(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        >
+          <Alert severity="error" onClose={() => setLoadError(null)} variant="filled">
+            {loadError}
+          </Alert>
+        </Snackbar>
       </Box>
     </ThemeProvider>
   );

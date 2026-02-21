@@ -32,6 +32,13 @@ export class CursorAdapter implements ChatSourceAdapter {
 
   async listProjects(): Promise<ProjectInfo[]> {
     try {
+      await access(this.projectsDir);
+    } catch {
+      console.warn(`[CursorAdapter] Projects directory not found: ${this.projectsDir}`);
+      return [];
+    }
+
+    try {
       const entries = await readdir(this.projectsDir);
       const projects: ProjectInfo[] = [];
 
@@ -42,12 +49,13 @@ export class CursorAdapter implements ChatSourceAdapter {
           const name = this.slugToDisplayName(entry);
           projects.push({ id: entry, name, path: entry });
         } catch {
-          // No transcripts directory
+          // No transcripts directory for this entry
         }
       }
 
       return projects.sort((a, b) => a.name.localeCompare(b.name));
-    } catch {
+    } catch (err) {
+      console.error(`[CursorAdapter] Failed to list projects:`, err);
       return [];
     }
   }
@@ -56,27 +64,32 @@ export class CursorAdapter implements ChatSourceAdapter {
     if (!projectId) return [];
 
     const transcriptsDir = join(this.projectsDir, projectId, 'agent-transcripts');
-    const metadata = await this.getConversationMetadata(projectId);
+    let metadata = new Map<string, { name: string; createdAt?: number; updatedAt?: number }>();
+    try {
+      metadata = await this.getConversationMetadata(projectId);
+    } catch (err) {
+      console.warn(`[CursorAdapter] Could not load metadata for ${projectId}, continuing without titles:`, err);
+    }
 
     try {
       const entries = await readdir(transcriptsDir, { withFileTypes: true });
       const conversations: ConversationSummary[] = [];
 
       for (const entry of entries) {
-        let conversationId: string;
-        let filePath: string;
-
-        if (entry.isDirectory()) {
-          conversationId = entry.name;
-          filePath = join(transcriptsDir, entry.name, `${entry.name}.jsonl`);
-        } else if (entry.name.endsWith('.txt')) {
-          conversationId = entry.name.replace('.txt', '');
-          filePath = join(transcriptsDir, entry.name);
-        } else {
-          continue;
-        }
-
         try {
+          let conversationId: string;
+          let filePath: string;
+
+          if (entry.isDirectory()) {
+            conversationId = entry.name;
+            filePath = join(transcriptsDir, entry.name, `${entry.name}.jsonl`);
+          } else if (entry.name.endsWith('.txt')) {
+            conversationId = entry.name.replace('.txt', '');
+            filePath = join(transcriptsDir, entry.name);
+          } else {
+            continue;
+          }
+
           await access(filePath);
           const fileStat = await stat(filePath);
           const meta = metadata.get(conversationId);
@@ -91,13 +104,14 @@ export class CursorAdapter implements ChatSourceAdapter {
             updatedAt: meta?.updatedAt || fileStat.mtimeMs,
           });
         } catch {
-          // File not accessible
+          // Individual conversation not accessible, skip it
         }
       }
 
       conversations.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
       return conversations;
-    } catch {
+    } catch (err) {
+      console.warn(`[CursorAdapter] Could not read transcripts directory ${transcriptsDir}:`, err);
       return [];
     }
   }
@@ -110,7 +124,7 @@ export class CursorAdapter implements ChatSourceAdapter {
     const jsonlPath = join(transcriptsDir, conversationId, `${conversationId}.jsonl`);
     try {
       await access(jsonlPath);
-      return this.parseJsonlTranscript(jsonlPath);
+      return await this.parseJsonlTranscript(jsonlPath);
     } catch {
       // fall through to .txt
     }
@@ -118,8 +132,9 @@ export class CursorAdapter implements ChatSourceAdapter {
     const txtPath = join(transcriptsDir, `${conversationId}.txt`);
     try {
       await access(txtPath);
-      return this.parseTxtTranscript(txtPath);
-    } catch {
+      return await this.parseTxtTranscript(txtPath);
+    } catch (err) {
+      console.warn(`[CursorAdapter] No readable transcript found for ${conversationId}:`, err);
       return [];
     }
   }
@@ -127,7 +142,14 @@ export class CursorAdapter implements ChatSourceAdapter {
   // --- JSONL Parser ---
 
   private async parseJsonlTranscript(filePath: string): Promise<UnifiedMessage[]> {
-    const content = await readFile(filePath, 'utf-8');
+    let content: string;
+    try {
+      content = await readFile(filePath, 'utf-8');
+    } catch (err) {
+      console.error(`[CursorAdapter] Failed to read JSONL file ${filePath}:`, err);
+      return [];
+    }
+
     const lines = content.trim().split('\n').filter(l => l.trim());
     const messages: UnifiedMessage[] = [];
 
@@ -159,7 +181,14 @@ export class CursorAdapter implements ChatSourceAdapter {
   // --- TXT Parser (state machine) ---
 
   private async parseTxtTranscript(filePath: string): Promise<UnifiedMessage[]> {
-    const content = await readFile(filePath, 'utf-8');
+    let content: string;
+    try {
+      content = await readFile(filePath, 'utf-8');
+    } catch (err) {
+      console.error(`[CursorAdapter] Failed to read TXT file ${filePath}:`, err);
+      return [];
+    }
+
     const lines = content.split('\n');
     const messages: UnifiedMessage[] = [];
 
@@ -338,12 +367,26 @@ export class CursorAdapter implements ChatSourceAdapter {
   ): Promise<Map<string, { name: string; createdAt?: number; updatedAt?: number }>> {
     const metadata = new Map<string, { name: string; createdAt?: number; updatedAt?: number }>();
 
+    let workspaceHash: string | null;
     try {
-      const workspaceHash = await this.findWorkspaceHash(projectId);
-      if (!workspaceHash) return metadata;
+      workspaceHash = await this.findWorkspaceHash(projectId);
+    } catch (err) {
+      console.warn(`[CursorAdapter] Could not locate workspace storage for ${projectId}:`, err);
+      return metadata;
+    }
 
-      const dbPath = join(this.workspaceStorageDir, workspaceHash, 'state.vscdb');
+    if (!workspaceHash) return metadata;
 
+    const dbPath = join(this.workspaceStorageDir, workspaceHash, 'state.vscdb');
+
+    try {
+      await access(dbPath);
+    } catch {
+      console.warn(`[CursorAdapter] Workspace database not found: ${dbPath}`);
+      return metadata;
+    }
+
+    try {
       const result = execSync(
         `sqlite3 "${dbPath}" "SELECT value FROM ItemTable WHERE key='composer.composerData';"`,
         { encoding: 'utf-8', timeout: 5000 }
@@ -359,8 +402,11 @@ export class CursorAdapter implements ChatSourceAdapter {
           });
         }
       }
-    } catch {
-      // SQLite not available or data not found
+    } catch (err) {
+      console.warn(
+        `[CursorAdapter] Could not read metadata from ${dbPath} (sqlite3 may not be installed):`,
+        err instanceof Error ? err.message : err
+      );
     }
 
     return metadata;
