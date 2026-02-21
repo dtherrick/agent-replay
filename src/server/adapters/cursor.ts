@@ -1,8 +1,21 @@
 import { readFile, readdir, access, stat } from 'fs/promises';
 import { join } from 'path';
 import { execSync } from 'child_process';
-import { homedir } from 'os';
+import { homedir, platform } from 'os';
 import type { ChatSourceAdapter, ProjectInfo, ConversationSummary, UnifiedMessage } from './types';
+
+function getCursorWorkspaceStorageDir(): string {
+  const home = homedir();
+  switch (platform()) {
+    case 'darwin':
+      return join(home, 'Library', 'Application Support', 'Cursor', 'User', 'workspaceStorage');
+    case 'win32':
+      return join(process.env.APPDATA || join(home, 'AppData', 'Roaming'), 'Cursor', 'User', 'workspaceStorage');
+    case 'linux':
+    default:
+      return join(process.env.XDG_CONFIG_HOME || join(home, '.config'), 'Cursor', 'User', 'workspaceStorage');
+  }
+}
 
 export class CursorAdapter implements ChatSourceAdapter {
   id = 'cursor';
@@ -14,7 +27,7 @@ export class CursorAdapter implements ChatSourceAdapter {
   constructor() {
     const home = homedir();
     this.projectsDir = join(home, '.cursor', 'projects');
-    this.workspaceStorageDir = join(home, 'Library', 'Application Support', 'Cursor', 'User', 'workspaceStorage');
+    this.workspaceStorageDir = getCursorWorkspaceStorageDir();
   }
 
   async listProjects(): Promise<ProjectInfo[]> {

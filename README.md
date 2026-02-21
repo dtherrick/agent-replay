@@ -1,115 +1,95 @@
-# StockSavvy Chat Simulator
+# Agent Replay
 
-A React-based chat simulator demo that displays a technical support conversation about investigating a database connection pool exhaustion issue. Built with React, TypeScript, Vite, and Material-UI.
+A React application for browsing and playing back AI agent conversations with full fidelity -- including thinking, tool calls, approvals, and results. Supports multiple chat sources through a plugin adapter architecture.
 
-## 🚀 Features
+## Supported Sources
 
-- **Interactive Chat Interface**: Displays a realistic support conversation between a user and AI assistant
-- **Technical Investigation Flow**: Shows the process of investigating database issues using Confluence runbooks and Splunk logs
-- **Expandable Function Calls**: View detailed function calls and responses in collapsible sections
-- **Modern UI**: Built with Material-UI components for a clean, professional look
-- **Responsive Design**: Works well on desktop and mobile devices
+- **Cursor IDE** -- Automatically discovers projects and conversations from your local Cursor agent transcripts, with titles and dates pulled from workspace metadata.
+- **Gemini CLI** -- Loads conversations from the Google Gemini CLI chat history format.
+- **Extensible** -- Add new sources (Codex, Claude Code, etc.) by implementing the `ChatSourceAdapter` interface.
 
-## 🛠️ Tech Stack
+## Features
 
-- **React 18** - Modern React with hooks
-- **TypeScript** - Type-safe development
-- **Vite** - Fast development and build tool
-- **Material-UI (MUI)** - Professional React component library
-- **Emotion** - CSS-in-JS styling
+- **Conversation Browser** -- Browse all your Cursor projects and conversations in a sidebar with titles and timestamps.
+- **Animated Playback** -- Watch conversations unfold step-by-step with thinking animations, tool approval flows, and timed delays.
+- **Configurable Display** -- Toggle visibility of thinking blocks, tool calls, and tool results. Adjust playback speed from 0.25x to 4x.
+- **Multi-format Parsing** -- Cursor `.txt` transcripts (with `[Thinking]`, `[Tool call]`, `[Tool result]` markers) and `.jsonl` transcripts are both supported.
+- **Cross-platform** -- Project discovery works on macOS, Linux, and Windows.
 
-## 📋 Chat Content
-
-The chat demonstrates a real-world SRE (Site Reliability Engineering) scenario where:
-
-1. A support engineer receives a "database connection pool exhaustion" alert
-2. They search Confluence for the relevant runbook
-3. They investigate using Splunk logs to identify the root cause
-4. They provide a detailed analysis and recommended next steps
-
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
-- Node.js (v16 or higher)
-- npm or yarn
+- Node.js (v18 or higher)
+- npm
 
 ### Installation
 
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd react-splunk-mcp-demo
-```
-
-2. Install dependencies:
 ```bash
 npm install
 ```
 
-3. Start the development server:
+### Development
+
 ```bash
 npm run dev
 ```
 
-4. Open your browser and navigate to the URL shown in the terminal (typically `http://localhost:5173`)
+Open `http://localhost:5173` in your browser. The sidebar will automatically discover your local Cursor projects and Gemini chat files.
 
-## 📁 Project Structure
+### Production Build
+
+```bash
+npm run build
+npm run preview
+```
+
+## Project Structure
 
 ```
 src/
+├── server/
+│   ├── plugin.ts                # Vite dev plugin with API middleware
+│   └── adapters/
+│       ├── types.ts             # Adapter interface + UnifiedMessage types
+│       ├── registry.ts          # Adapter registry
+│       ├── gemini.ts            # Gemini CLI adapter
+│       └── cursor.ts            # Cursor IDE adapter
 ├── components/
-│   ├── ChatContainer.tsx    # Main chat container component
-│   └── ChatMessage.tsx      # Individual message component
+│   ├── ConversationBrowser.tsx  # Source/project/conversation selector
+│   ├── DisplayControls.tsx      # Visibility toggles + speed slider
+│   ├── ChatContainer.tsx        # Playback engine + message display
+│   └── ChatMessage.tsx          # Message rendering (all types)
 ├── types/
-│   └── chat.ts              # TypeScript interfaces for chat data
-├── chat_history.json        # The actual chat conversation data
-├── App.tsx                  # Main app component with theme setup
-└── main.tsx                 # React entry point
+│   └── chat.ts                  # Frontend type definitions
+├── chat_history.json            # Sample Gemini CLI conversation
+├── App.tsx                      # Layout with sidebar drawer
+└── main.tsx                     # React entry point
 ```
 
-## 🎨 Features Breakdown
+## Adding a New Source Adapter
 
-### Message Types
-- **User Messages**: Questions and requests from the support engineer
-- **Assistant Messages**: AI responses with analysis and actions
-- **Function Calls**: API calls to external services (Confluence, Splunk)
-- **Function Responses**: Results from API calls with detailed output
-
-### UI Components
-- **Expandable sections** for function calls and responses
-- **Color-coded messages** (user vs assistant)
-- **Professional styling** with Material-UI
-- **Responsive layout** that works on all screen sizes
-
-## 🔧 Available Scripts
-
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run preview` - Preview production build
-- `npm run lint` - Run ESLint
-
-## 📝 Chat Data Format
-
-The chat history is stored in JSON format with the following structure:
+Implement the `ChatSourceAdapter` interface in `src/server/adapters/`:
 
 ```typescript
-interface ChatMessage {
-  role: 'user' | 'model';
-  parts: ChatPart[];
-}
-
-interface ChatPart {
-  text?: string;
-  functionCall?: FunctionCall;
-  functionResponse?: FunctionResponse;
+interface ChatSourceAdapter {
+  id: string;
+  name: string;
+  listProjects(): Promise<ProjectInfo[]>;
+  listConversations(projectId?: string): Promise<ConversationSummary[]>;
+  loadConversation(conversationId: string, projectId?: string): Promise<UnifiedMessage[]>;
 }
 ```
 
-## 🤝 Contributing
+Then register it in `src/server/adapters/registry.ts`.
 
-Feel free to submit issues and enhancement requests!
+## Scripts
 
-## 📄 License
+- `npm run dev` -- Start development server with API middleware
+- `npm run build` -- Type-check and build for production
+- `npm run preview` -- Preview production build
+- `npm run lint` -- Run ESLint
+
+## License
 
 This project is for demonstration purposes.

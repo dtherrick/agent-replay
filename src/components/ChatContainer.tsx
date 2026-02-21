@@ -391,7 +391,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({
             }}
           >
             <Typography variant="h5" gutterBottom>
-              Chat Playback
+              Agent Replay
             </Typography>
             <Typography variant="body2">
               Select a conversation from the sidebar to begin playback.
