@@ -1,14 +1,15 @@
 import type { ChatSourceAdapter } from './types';
 import { GeminiAdapter } from './gemini';
 import { CursorAdapter } from './cursor';
-import { join } from 'path';
+import { SamplesAdapter } from './samples';
 
 export class AdapterRegistry {
   private adapters = new Map<string, ChatSourceAdapter>();
 
   constructor(projectRoot: string) {
-    this.register(new GeminiAdapter(join(projectRoot, 'src')));
     this.register(new CursorAdapter());
+    this.register(new GeminiAdapter());
+    this.register(new SamplesAdapter(projectRoot));
   }
 
   register(adapter: ChatSourceAdapter): void {

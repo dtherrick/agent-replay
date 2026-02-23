@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, type DragEvent } from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import {
   CssBaseline,
@@ -14,6 +14,7 @@ import { Menu as MenuIcon, ChevronLeft as CloseIcon } from '@mui/icons-material'
 import ChatContainer from './components/ChatContainer';
 import ConversationBrowser from './components/ConversationBrowser';
 import DisplayControls from './components/DisplayControls';
+import { parseConversationFile } from './utils/parseConversationFile';
 import type { UnifiedMessage, ConversationInfo, DisplaySettings } from './types/chat';
 
 const DRAWER_WIDTH = 320;
@@ -67,6 +68,47 @@ function App() {
   const [displaySettings, setDisplaySettings] = useState<DisplaySettings>(loadDisplaySettings);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDragOver = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: DragEvent) => {
+    if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+
+    const file = e.dataTransfer.files[0];
+    if (!file || !file.name.endsWith('.json')) {
+      setLoadError('Please drop a .json conversation file');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const messages = parseConversationFile(reader.result as string);
+        if (messages.length === 0) {
+          setLoadError('No messages found in the dropped file');
+          return;
+        }
+        const name = file.name.replace('.json', '').replace(/[-_]/g, ' ');
+        setConversationInfo({ id: `dropped-${Date.now()}`, title: name, sourceId: 'local-file' });
+        setConversation(messages);
+        setLoadError(null);
+      } catch (err) {
+        setLoadError(err instanceof Error ? err.message : 'Failed to parse dropped file');
+      }
+    };
+    reader.readAsText(file);
+  }, []);
 
   const handleSelectConversation = useCallback(async (info: ConversationInfo) => {
     setConversationInfo(info);
@@ -136,6 +178,9 @@ function App() {
 
         {/* Main content */}
         <Box
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
           sx={{
             flex: 1,
             transition: 'margin 0.2s',
@@ -143,8 +188,31 @@ function App() {
             overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',
+            position: 'relative',
           }}
         >
+          {isDragging && (
+            <Box
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                zIndex: 1100,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                bgcolor: 'rgba(25, 118, 210, 0.12)',
+                border: '3px dashed',
+                borderColor: 'primary.main',
+                borderRadius: 2,
+                m: 2,
+                pointerEvents: 'none',
+              }}
+            >
+              <Box sx={{ color: 'primary.main', fontSize: '1.2rem', fontWeight: 500 }}>
+                Drop a .json conversation file to play it back
+              </Box>
+            </Box>
+          )}
           {/* Toggle drawer button when closed */}
           {!drawerOpen && (
             <Box sx={{ position: 'fixed', top: 8, left: 8, zIndex: 1200 }}>

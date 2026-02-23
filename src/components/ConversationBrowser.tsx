@@ -79,15 +79,20 @@ const ConversationBrowser: React.FC<ConversationBrowserProps> = ({
       .catch((err) => setError(`Could not load projects: ${err.message}`));
   }, [selectedSource]);
 
+  const selectedSourceRef = React.useRef(selectedSource);
+  selectedSourceRef.current = selectedSource;
+
   useEffect(() => {
-    if (!selectedSource || !selectedProject) return;
+    const source = selectedSourceRef.current;
+    if (!source || !selectedProject) return;
+    if (!projects.some(p => p.id === selectedProject)) return;
     setConversations([]);
     setLoading(true);
     setError(null);
     setSearchQuery('');
 
     fetchJson<ConversationInfo[]>(
-      `/api/sources/${selectedSource}/conversations?projectId=${selectedProject}`
+      `/api/sources/${source}/conversations?projectId=${selectedProject}`
     )
       .then((data) => {
         setConversations(data);
@@ -97,7 +102,9 @@ const ConversationBrowser: React.FC<ConversationBrowserProps> = ({
         setError(`Could not load conversations: ${err.message}`);
         setLoading(false);
       });
-  }, [selectedSource, selectedProject]);
+    // selectedSource is read via ref to avoid firing on source switch (race condition)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProject, projects]);
 
   const formatDate = (ms?: number) => {
     if (!ms) return '';
