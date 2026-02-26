@@ -45,6 +45,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({
   const isPausedRef = useRef(false);
   const animationInProgressRef = useRef(false);
   const displaySettingsRef = useRef(displaySettings);
+  const displayedHistoryRef = useRef<PlaybackHistory>([]);
 
   useEffect(() => {
     displaySettingsRef.current = displaySettings;
@@ -61,6 +62,10 @@ const ChatContainer: React.FC<ChatContainerProps> = ({
   useEffect(() => {
     currentIndexRef.current = currentMessageIndex;
   }, [currentMessageIndex]);
+
+  useEffect(() => {
+    displayedHistoryRef.current = displayedHistory;
+  }, [displayedHistory]);
 
   // --- Transformation: UnifiedMessage[] → PlaybackHistory ---
 
@@ -321,6 +326,131 @@ const ChatContainer: React.FC<ChatContainerProps> = ({
     setCurrentMessageIndex(transformedHistory.length);
   };
 
+  // --- Step Controls ---
+
+  const stepForward = () => {
+    const transformedHistory = transformedHistoryRef.current;
+    if (transformedHistory.length === 0) return;
+
+    if (animationInProgressRef.current && !isPausedRef.current) {
+      pauseAnimation();
+    }
+
+    let idx = currentIndexRef.current;
+    if (idx >= transformedHistory.length) return;
+
+    if (!animationInProgressRef.current) {
+      animationInProgressRef.current = true;
+      setAnimationInProgress(true);
+    }
+
+    const message = transformedHistory[idx];
+
+    if (message.role === 'thinking_animation') {
+      const next = transformedHistory[idx + 1];
+      if (next) {
+        setDisplayedHistory(prev => [...prev, next]);
+        idx += 2;
+      } else {
+        idx += 1;
+      }
+    } else if (message.role === 'approval') {
+      const next = transformedHistory[idx + 1];
+      if (next && next.role === 'tool_call') {
+        setDisplayedHistory(prev => [...prev, next]);
+        idx += 2;
+      } else {
+        setDisplayedHistory(prev => [...prev, message]);
+        idx += 1;
+      }
+    } else {
+      setDisplayedHistory(prev => [...prev, message]);
+      idx += 1;
+    }
+
+    setCurrentMessageIndex(idx);
+    currentIndexRef.current = idx;
+
+    if (idx >= transformedHistory.length) {
+      animationInProgressRef.current = false;
+      setAnimationInProgress(false);
+    }
+  };
+
+  const stepBackward = () => {
+    if (displayedHistoryRef.current.length === 0) return;
+
+    if (animationInProgressRef.current && !isPausedRef.current) {
+      pauseAnimation();
+    }
+
+    setDisplayedHistory(prev => prev.slice(0, -1));
+
+    let idx = currentIndexRef.current;
+    if (idx >= 2) {
+      const prevEntry = transformedHistoryRef.current[idx - 2];
+      if (prevEntry?.role === 'thinking_animation' || prevEntry?.role === 'approval') {
+        idx -= 2;
+      } else {
+        idx -= 1;
+      }
+    } else {
+      idx = 0;
+    }
+
+    setCurrentMessageIndex(idx);
+    currentIndexRef.current = idx;
+
+    if (displayedHistoryRef.current.length <= 1) {
+      animationInProgressRef.current = false;
+      setAnimationInProgress(false);
+    }
+  };
+
+  const togglePlayPause = () => {
+    if (!animationInProgressRef.current) {
+      animateConversation();
+    } else if (isPausedRef.current) {
+      resumeAnimation();
+    } else {
+      pauseAnimation();
+    }
+  };
+
+  // --- Keyboard Shortcuts ---
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (!conversation || conversation.length === 0) return;
+
+      switch (e.key) {
+        case ' ':
+          e.preventDefault();
+          togglePlayPause();
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          stepForward();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          stepBackward();
+          break;
+        case 'r':
+        case 'R':
+          restartAnimation();
+          break;
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+    // Control functions use refs for async state; re-registration on conversation change is sufficient.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation]);
+
   useEffect(() => {
     return () => {
       if (animationTimeoutRef.current) {
@@ -441,19 +571,19 @@ const ChatContainer: React.FC<ChatContainerProps> = ({
           }}
         >
           {!animationInProgress ? (
-            <Tooltip title="Play">
+            <Tooltip title="Play (Space)">
               <Fab color="primary" onClick={animateConversation} size="medium">
                 <PlayIcon />
               </Fab>
             </Tooltip>
           ) : isPaused ? (
-            <Tooltip title="Resume">
+            <Tooltip title="Resume (Space)">
               <Fab color="primary" onClick={resumeAnimation} size="medium">
                 <PlayIcon />
               </Fab>
             </Tooltip>
           ) : (
-            <Tooltip title="Pause">
+            <Tooltip title="Pause (Space)">
               <Fab color="secondary" onClick={pauseAnimation} size="medium">
                 <PauseIcon />
               </Fab>
@@ -461,7 +591,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({
           )}
 
           {(animationInProgress || displayedHistory.length > 0) && (
-            <Tooltip title="Restart">
+            <Tooltip title="Restart (R)">
               <Fab onClick={restartAnimation} size="small" sx={{ bgcolor: 'grey.700' }}>
                 <RestartIcon />
               </Fab>
