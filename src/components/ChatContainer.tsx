@@ -592,7 +592,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({
 
           {(animationInProgress || displayedHistory.length > 0) && (
             <Tooltip title="Restart (R)">
-              <Fab onClick={restartAnimation} size="small" sx={{ bgcolor: 'grey.700' }}>
+              <Fab onClick={restartAnimation} size="small" sx={{ bgcolor: 'action.selected' }}>
                 <RestartIcon />
               </Fab>
             </Tooltip>

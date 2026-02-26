@@ -11,6 +11,7 @@ const defaultSettings: DisplaySettings = {
   showToolCalls: true,
   showToolResults: true,
   playbackSpeed: 1,
+  themeMode: 'dark',
 };
 
 const testConversationInfo: ConversationInfo = {

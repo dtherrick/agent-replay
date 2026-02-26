@@ -9,12 +9,9 @@
 - **Samples adapter and drag-and-drop** -- Bundled demo conversations in `samples/` plus drag-and-drop any `.json` file onto the app to play it back.
 - **Test suite** -- 67 Vitest tests covering all adapters and the API layer.
 - **Keyboard controls** -- Space (play/pause/resume), Arrow Right/Left (step forward/backward with pair-skipping), R (restart). Shortcuts are guarded against input focus and missing conversations. 15 component tests via React Testing Library.
+- **Light / dark theme toggle** -- Switch in the sidebar Display Options panel toggles between light and dark MUI themes. Choice persists to localStorage. Hardcoded dark-mode colors replaced with theme-aware palette tokens. 10 tests (5 DisplayControls + 5 App).
 
 ## Phase 1 -- UI and Usability
-
-### Light / Dark Theme Toggle
-
-The app is currently hardcoded to dark mode. Add a toggle (sidebar or top bar) that switches the MUI theme and persists the choice to localStorage.
 
 ### In-Conversation Search
 

@@ -12,6 +12,8 @@ import {
   Build as ToolIcon,
   Output as ResultIcon,
   Speed as SpeedIcon,
+  DarkMode as DarkModeIcon,
+  LightMode as LightModeIcon,
 } from '@mui/icons-material';
 import type { DisplaySettings } from '../types/chat';
 
@@ -33,11 +35,33 @@ const DisplayControls: React.FC<DisplayControlsProps> = ({ settings, onChange })
     onChange({ ...settings, ...patch });
   };
 
+  const isDark = settings.themeMode === 'dark';
+
   return (
     <Box sx={{ p: 2 }}>
       <Typography variant="subtitle2" sx={{ mb: 1 }}>
         Display Options
       </Typography>
+
+      <FormControlLabel
+        control={
+          <Switch
+            size="small"
+            checked={isDark}
+            onChange={(_, checked) => update({ themeMode: checked ? 'dark' : 'light' })}
+            inputProps={{ 'aria-label': 'Theme' }}
+          />
+        }
+        label={
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            {isDark ? <DarkModeIcon sx={{ fontSize: 16 }} /> : <LightModeIcon sx={{ fontSize: 16 }} />}
+            <Typography variant="body2">{isDark ? 'Dark' : 'Light'}</Typography>
+          </Box>
+        }
+        sx={{ mb: 0.5, ml: 0 }}
+      />
+
+      <Divider sx={{ my: 1 }} />
 
       <FormControlLabel
         control={

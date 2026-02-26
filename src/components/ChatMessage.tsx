@@ -117,7 +117,7 @@ const ToolCallDisplay: React.FC<{ message: PlaybackMessage }> = ({ message }) =>
       </AccordionSummary>
       {hasArgs && (
         <AccordionDetails>
-          <Paper sx={{ p: 1.5, bgcolor: 'grey.800', borderRadius: 1 }}>
+          <Paper sx={{ p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
             <Box
               component="pre"
               sx={{
@@ -161,7 +161,7 @@ const ToolResultDisplay: React.FC<{ message: PlaybackMessage }> = ({ message }) 
         </Box>
       </AccordionSummary>
       <AccordionDetails>
-        <Paper sx={{ p: 1.5, bgcolor: 'grey.800', borderRadius: 1 }}>
+        <Paper sx={{ p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
           <Box
             component="pre"
             sx={{
@@ -189,7 +189,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, index }) => {
         <Box sx={{ width: 56, display: 'flex', flexDirection: 'column', alignItems: 'center', px: 1 }}>
           <BotIcon color="secondary" />
         </Box>
-        <Card sx={{ flex: 1, bgcolor: 'grey.900', borderRadius: 2 }}>
+        <Card sx={{ flex: 1, bgcolor: 'background.paper', borderRadius: 2 }}>
           <CardContent sx={{ '&:last-child': { pb: 2 } }}>
             <ThinkingAnimation />
           </CardContent>
@@ -236,10 +236,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, index }) => {
 
   const getBgColor = () => {
     if (isUser) return 'primary.main';
-    if (isThinking) return 'grey.800';
+    if (isThinking) return 'action.hover';
     if (isToolCall) return 'info.dark';
     if (isToolResult) return 'info.dark';
-    return 'grey.900';
+    return 'background.paper';
   };
 
   const getChipColor = (): 'primary' | 'secondary' | 'info' | 'warning' | 'default' => {
@@ -277,13 +277,13 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, index }) => {
                 fontStyle: isThinking ? 'italic' : undefined,
                 '& p': { m: 0, mb: 1 },
                 '& code': {
-                  bgcolor: 'grey.900',
+                  bgcolor: 'action.selected',
                   color: 'secondary.light',
                   px: 0.5,
                   borderRadius: 1,
                 },
                 '& pre': {
-                  bgcolor: 'grey.900',
+                  bgcolor: 'action.selected',
                   p: 1,
                   borderRadius: 1,
                   overflow: 'auto',

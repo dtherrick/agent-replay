@@ -41,6 +41,7 @@ export interface DisplaySettings {
   showToolCalls: boolean;
   showToolResults: boolean;
   playbackSpeed: number;
+  themeMode: 'light' | 'dark';
 }
 
 // --- Playback types (used by the animation system) ---

@@ -1,4 +1,4 @@
-import { useState, useCallback, type DragEvent } from 'react';
+import { useState, useCallback, useMemo, type DragEvent } from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import {
   CssBaseline,
@@ -19,17 +19,19 @@ import type { UnifiedMessage, ConversationInfo, DisplaySettings } from './types/
 
 const DRAWER_WIDTH = 320;
 
-const theme = createTheme({
-  shape: { borderRadius: 8 },
-  palette: {
-    mode: 'dark',
-    primary: { main: '#1976d2' },
-    secondary: { main: '#dc004e' },
-  },
-  typography: {
-    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
-  },
-});
+function buildTheme(mode: 'light' | 'dark') {
+  return createTheme({
+    shape: { borderRadius: 8 },
+    palette: {
+      mode,
+      primary: { main: '#1976d2' },
+      secondary: { main: '#dc004e' },
+    },
+    typography: {
+      fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+    },
+  });
+}
 
 const SETTINGS_KEY = 'agent-replay-display-settings';
 
@@ -38,11 +40,12 @@ const defaultDisplaySettings: DisplaySettings = {
   showToolCalls: true,
   showToolResults: true,
   playbackSpeed: 1,
+  themeMode: 'dark',
 };
 
 function loadDisplaySettings(): DisplaySettings {
   try {
-    const stored = localStorage.getItem(SETTINGS_KEY);
+    const stored = window.localStorage.getItem(SETTINGS_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
       return { ...defaultDisplaySettings, ...parsed };
@@ -55,7 +58,7 @@ function loadDisplaySettings(): DisplaySettings {
 
 function saveDisplaySettings(settings: DisplaySettings): void {
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   } catch {
     // localStorage full or unavailable
   }
@@ -69,6 +72,8 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+
+  const theme = useMemo(() => buildTheme(displaySettings.themeMode), [displaySettings.themeMode]);
 
   const handleDragOver = useCallback((e: DragEvent) => {
     e.preventDefault();
@@ -219,7 +224,7 @@ function App() {
               <Tooltip title="Open sidebar">
                 <IconButton
                   onClick={() => setDrawerOpen(true)}
-                  sx={{ bgcolor: 'grey.800', '&:hover': { bgcolor: 'grey.700' } }}
+                  sx={{ bgcolor: 'background.paper', '&:hover': { bgcolor: 'action.hover' } }}
                 >
                   <MenuIcon />
                 </IconButton>
