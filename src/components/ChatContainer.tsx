@@ -464,6 +464,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({
   const totalMessages = transformedHistoryRef.current.length;
   const hasConversation = conversation && conversation.length > 0;
 
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       {/* Header */}
@@ -600,8 +601,8 @@ const ChatContainer: React.FC<ChatContainerProps> = ({
         </Box>
       )}
 
-      {/* Loading indicator */}
-      {!conversation && (
+      {/* Loading indicator -- only when a conversation is selected but data hasn't arrived */}
+      {!conversation && conversationInfo && (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
           <CircularProgress size={24} />
         </Box>
