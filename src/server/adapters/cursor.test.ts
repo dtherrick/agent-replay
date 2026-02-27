@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdir, writeFile, rm } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -7,18 +7,13 @@ import { CursorAdapter } from './cursor';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesRoot = join(__dirname, '..', '..', '..', 'node_modules', '.tmp', 'test-fixtures');
 
-vi.mock('os', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('os')>();
-  return { ...actual, homedir: () => testHome };
-});
-
-vi.mock('child_process', () => ({
-  execSync: vi.fn(() => ''),
-}));
-
-let testHome: string;
 let projectsDir: string;
+let fixtureRoot: string;
 let testId = 0;
+
+function createAdapter(): CursorAdapter {
+  return new CursorAdapter(projectsDir, join(fixtureRoot, 'workspaceStorage'));
+}
 
 async function createTranscriptsDir(projectSlug: string): Promise<string> {
   const dir = join(projectsDir, projectSlug, 'agent-transcripts');
@@ -28,14 +23,13 @@ async function createTranscriptsDir(projectSlug: string): Promise<string> {
 
 beforeEach(async () => {
   testId++;
-  testHome = join(fixturesRoot, `run-${testId}-${Date.now()}`);
-  projectsDir = join(testHome, '.cursor', 'projects');
+  fixtureRoot = join(fixturesRoot, `run-${testId}-${Date.now()}`);
+  projectsDir = join(fixtureRoot, 'projects');
   await mkdir(projectsDir, { recursive: true });
 });
 
 afterEach(async () => {
-  await rm(testHome, { recursive: true, force: true });
-  vi.restoreAllMocks();
+  await rm(fixtureRoot, { recursive: true, force: true });
 });
 
 describe('CursorAdapter', () => {
@@ -44,7 +38,7 @@ describe('CursorAdapter', () => {
       await createTranscriptsDir('Users-alice-Code-my-project');
       await mkdir(join(projectsDir, 'Users-bob-Code-no-transcripts'), { recursive: true });
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const projects = await adapter.listProjects();
 
       expect(projects).toHaveLength(1);
@@ -55,7 +49,7 @@ describe('CursorAdapter', () => {
     it('returns empty array when projects directory does not exist', async () => {
       await rm(projectsDir, { recursive: true });
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const projects = await adapter.listProjects();
 
       expect(projects).toEqual([]);
@@ -66,7 +60,7 @@ describe('CursorAdapter', () => {
       await createTranscriptsDir('Users-x-Code-alpha');
       await createTranscriptsDir('Users-x-Code-middle');
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const projects = await adapter.listProjects();
 
       expect(projects.map(p => p.name)).toEqual(['alpha', 'middle', 'zebra']);
@@ -75,7 +69,7 @@ describe('CursorAdapter', () => {
 
   describe('listConversations', () => {
     it('returns empty array when projectId is not provided', async () => {
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const convs = await adapter.listConversations();
 
       expect(convs).toEqual([]);
@@ -85,7 +79,7 @@ describe('CursorAdapter', () => {
       const dir = await createTranscriptsDir('Users-x-Code-proj');
       await writeFile(join(dir, 'abc12345-1234-5678-9abc-def012345678.txt'), 'user:\nHello\n');
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const convs = await adapter.listConversations('Users-x-Code-proj');
 
       expect(convs).toHaveLength(1);
@@ -99,7 +93,7 @@ describe('CursorAdapter', () => {
       await mkdir(convDir, { recursive: true });
       await writeFile(join(convDir, 'conv-001.jsonl'), '');
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const convs = await adapter.listConversations('Users-x-Code-proj');
 
       expect(convs).toHaveLength(1);
@@ -109,7 +103,7 @@ describe('CursorAdapter', () => {
     it('returns empty array for non-existent transcripts directory', async () => {
       await mkdir(join(projectsDir, 'Users-x-Code-empty'), { recursive: true });
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const convs = await adapter.listConversations('Users-x-Code-empty');
 
       expect(convs).toEqual([]);
@@ -120,7 +114,7 @@ describe('CursorAdapter', () => {
       await writeFile(join(dir, 'readme.md'), 'ignore me');
       await writeFile(join(dir, 'conv.txt'), 'user:\nHi\n');
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const convs = await adapter.listConversations('Users-x-Code-proj');
 
       expect(convs).toHaveLength(1);
@@ -146,7 +140,7 @@ describe('CursorAdapter', () => {
       ];
       await writeFile(join(convDir, 'conv-001.jsonl'), lines.join('\n'));
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const messages = await adapter.loadConversation('conv-001', 'Users-x-Code-proj');
 
       expect(messages).toHaveLength(2);
@@ -172,7 +166,7 @@ describe('CursorAdapter', () => {
       ];
       await writeFile(join(convDir, 'conv-001.jsonl'), lines.join('\n'));
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const messages = await adapter.loadConversation('conv-001', 'Users-x-Code-proj');
 
       expect(messages).toHaveLength(1);
@@ -194,7 +188,7 @@ describe('CursorAdapter', () => {
       ];
       await writeFile(join(convDir, 'conv-001.jsonl'), lines.join('\n'));
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const messages = await adapter.loadConversation('conv-001', 'Users-x-Code-proj');
 
       expect(messages).toHaveLength(1);
@@ -207,7 +201,7 @@ describe('CursorAdapter', () => {
       await mkdir(convDir);
       await writeFile(join(convDir, 'conv-001.jsonl'), '');
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const messages = await adapter.loadConversation('conv-001', 'Users-x-Code-proj');
 
       expect(messages).toEqual([]);
@@ -225,7 +219,7 @@ describe('CursorAdapter', () => {
       ].join('\n');
       await writeFile(join(dir, 'conv.txt'), content);
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const messages = await adapter.loadConversation('conv', 'Users-x-Code-proj');
 
       expect(messages).toHaveLength(2);
@@ -246,7 +240,7 @@ describe('CursorAdapter', () => {
       ].join('\n');
       await writeFile(join(dir, 'conv.txt'), content);
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const messages = await adapter.loadConversation('conv', 'Users-x-Code-proj');
 
       expect(messages).toHaveLength(4);
@@ -268,7 +262,7 @@ describe('CursorAdapter', () => {
       ].join('\n');
       await writeFile(join(dir, 'conv.txt'), content);
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const messages = await adapter.loadConversation('conv', 'Users-x-Code-proj');
 
       expect(messages).toHaveLength(2);
@@ -306,7 +300,7 @@ describe('CursorAdapter', () => {
       ].join('\n');
       await writeFile(join(dir, 'conv.txt'), content);
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const messages = await adapter.loadConversation('conv', 'Users-x-Code-proj');
 
       expect(messages).toHaveLength(7);
@@ -327,7 +321,7 @@ describe('CursorAdapter', () => {
       ].join('\n');
       await writeFile(join(dir, 'conv.txt'), content);
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const messages = await adapter.loadConversation('conv', 'Users-x-Code-proj');
 
       expect(messages).toHaveLength(1);
@@ -339,14 +333,14 @@ describe('CursorAdapter', () => {
     it('returns empty array when no transcript file exists', async () => {
       await createTranscriptsDir('Users-x-Code-proj');
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const messages = await adapter.loadConversation('nonexistent', 'Users-x-Code-proj');
 
       expect(messages).toEqual([]);
     });
 
     it('returns empty array when projectId is not provided', async () => {
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const messages = await adapter.loadConversation('conv');
 
       expect(messages).toEqual([]);
@@ -365,7 +359,7 @@ describe('CursorAdapter', () => {
       );
       await writeFile(join(dir, 'conv.txt'), 'assistant:\nFrom TXT');
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const messages = await adapter.loadConversation('conv', 'Users-x-Code-proj');
 
       expect(messages).toHaveLength(1);
@@ -386,7 +380,7 @@ describe('CursorAdapter', () => {
       ].join('\n');
       await writeFile(join(dir, 'conv.txt'), content);
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const messages = await adapter.loadConversation('conv', 'Users-x-Code-proj');
 
       expect(messages).toHaveLength(1);
@@ -403,7 +397,7 @@ describe('CursorAdapter', () => {
       ].join('\n');
       await writeFile(join(dir, 'conv.txt'), content);
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const messages = await adapter.loadConversation('conv', 'Users-x-Code-proj');
 
       expect(messages).toHaveLength(1);
@@ -411,11 +405,136 @@ describe('CursorAdapter', () => {
     });
   });
 
+  describe('loadConversation - subagent discovery', () => {
+    it('loads subagent conversations from subagents/ directory', async () => {
+      const dir = await createTranscriptsDir('Users-x-Code-proj');
+      const convDir = join(dir, 'conv-001');
+      await mkdir(convDir);
+
+      await writeFile(join(convDir, 'conv-001.jsonl'), [
+        JSON.stringify({ role: 'user', message: { content: [{ type: 'text', text: 'Build a dashboard' }] } }),
+        JSON.stringify({ role: 'assistant', message: { content: [{ type: 'text', text: 'The subagent built the dashboard.' }] } }),
+      ].join('\n'));
+
+      const subDir = join(convDir, 'subagents');
+      await mkdir(subDir);
+      await writeFile(join(subDir, 'sub-aaa.jsonl'), [
+        JSON.stringify({ role: 'user', message: { content: [{ type: 'text', text: 'Build it' }] } }),
+        JSON.stringify({ role: 'assistant', message: { content: [{ type: 'text', text: 'Done building.' }] } }),
+      ].join('\n'));
+
+      const adapter = createAdapter();
+      const messages = await adapter.loadConversation('conv-001', 'Users-x-Code-proj');
+
+      const subagentMsgs = messages.filter(m => m.role === 'subagent');
+      expect(subagentMsgs).toHaveLength(1);
+      expect(subagentMsgs[0].subagent).toBeDefined();
+      expect(subagentMsgs[0].subagent!.id).toBe('sub-aaa');
+      expect(subagentMsgs[0].subagent!.messages).toHaveLength(2);
+      expect(subagentMsgs[0].subagent!.messages[0].content).toBe('Build it');
+    });
+
+    it('places subagent before the message that mentions "subagent"', async () => {
+      const dir = await createTranscriptsDir('Users-x-Code-proj');
+      const convDir = join(dir, 'conv-001');
+      await mkdir(convDir);
+
+      await writeFile(join(convDir, 'conv-001.jsonl'), [
+        JSON.stringify({ role: 'user', message: { content: [{ type: 'text', text: 'Build something' }] } }),
+        JSON.stringify({ role: 'assistant', message: { content: [{ type: 'text', text: 'Let me plan this.' }] } }),
+        JSON.stringify({ role: 'assistant', message: { content: [{ type: 'text', text: 'The subagent finished the work.' }] } }),
+        JSON.stringify({ role: 'assistant', message: { content: [{ type: 'text', text: 'All done.' }] } }),
+      ].join('\n'));
+
+      const subDir = join(convDir, 'subagents');
+      await mkdir(subDir);
+      await writeFile(join(subDir, 'sub-bbb.jsonl'),
+        JSON.stringify({ role: 'assistant', message: { content: [{ type: 'text', text: 'Subagent work.' }] } })
+      );
+
+      const adapter = createAdapter();
+      const messages = await adapter.loadConversation('conv-001', 'Users-x-Code-proj');
+
+      const roles = messages.map(m => m.role);
+      const subIdx = roles.indexOf('subagent');
+      expect(subIdx).toBeGreaterThan(0);
+      expect(messages[subIdx + 1].content).toContain('subagent finished');
+    });
+
+    it('appends subagent at end when no text mentions "subagent"', async () => {
+      const dir = await createTranscriptsDir('Users-x-Code-proj');
+      const convDir = join(dir, 'conv-001');
+      await mkdir(convDir);
+
+      await writeFile(join(convDir, 'conv-001.jsonl'), [
+        JSON.stringify({ role: 'user', message: { content: [{ type: 'text', text: 'Hello' }] } }),
+        JSON.stringify({ role: 'assistant', message: { content: [{ type: 'text', text: 'Hi there' }] } }),
+      ].join('\n'));
+
+      const subDir = join(convDir, 'subagents');
+      await mkdir(subDir);
+      await writeFile(join(subDir, 'sub-ccc.jsonl'),
+        JSON.stringify({ role: 'assistant', message: { content: [{ type: 'text', text: 'Work done.' }] } })
+      );
+
+      const adapter = createAdapter();
+      const messages = await adapter.loadConversation('conv-001', 'Users-x-Code-proj');
+
+      expect(messages[messages.length - 1].role).toBe('subagent');
+    });
+
+    it('does not affect conversations without subagents', async () => {
+      const dir = await createTranscriptsDir('Users-x-Code-proj');
+      const convDir = join(dir, 'conv-001');
+      await mkdir(convDir);
+
+      await writeFile(join(convDir, 'conv-001.jsonl'), [
+        JSON.stringify({ role: 'user', message: { content: [{ type: 'text', text: 'Hello' }] } }),
+        JSON.stringify({ role: 'assistant', message: { content: [{ type: 'text', text: 'Hi' }] } }),
+      ].join('\n'));
+
+      const adapter = createAdapter();
+      const messages = await adapter.loadConversation('conv-001', 'Users-x-Code-proj');
+
+      expect(messages).toHaveLength(2);
+      expect(messages.every(m => m.role !== 'subagent')).toBe(true);
+    });
+
+    it('loads multiple subagents sorted by creation time', async () => {
+      const dir = await createTranscriptsDir('Users-x-Code-proj');
+      const convDir = join(dir, 'conv-001');
+      await mkdir(convDir);
+
+      await writeFile(join(convDir, 'conv-001.jsonl'),
+        JSON.stringify({ role: 'user', message: { content: [{ type: 'text', text: 'Go' }] } })
+      );
+
+      const subDir = join(convDir, 'subagents');
+      await mkdir(subDir);
+      await writeFile(join(subDir, 'sub-first.jsonl'),
+        JSON.stringify({ role: 'assistant', message: { content: [{ type: 'text', text: 'First' }] } })
+      );
+      // Small delay so the second file has a later timestamp
+      await new Promise(r => setTimeout(r, 50));
+      await writeFile(join(subDir, 'sub-second.jsonl'),
+        JSON.stringify({ role: 'assistant', message: { content: [{ type: 'text', text: 'Second' }] } })
+      );
+
+      const adapter = createAdapter();
+      const messages = await adapter.loadConversation('conv-001', 'Users-x-Code-proj');
+
+      const subs = messages.filter(m => m.role === 'subagent');
+      expect(subs).toHaveLength(2);
+      expect(subs[0].subagent!.id).toBe('sub-first');
+      expect(subs[1].subagent!.id).toBe('sub-second');
+    });
+  });
+
   describe('slugToDisplayName (via listProjects)', () => {
     it('extracts project name after Code segment', async () => {
       await createTranscriptsDir('Users-dherrick-Code-agent-replay');
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const projects = await adapter.listProjects();
 
       expect(projects[0].name).toBe('agent-replay');
@@ -424,7 +543,7 @@ describe('CursorAdapter', () => {
     it('falls back to last 3 segments when no Code segment', async () => {
       await createTranscriptsDir('some-random-project-name-here');
 
-      const adapter = new CursorAdapter();
+      const adapter = createAdapter();
       const projects = await adapter.listProjects();
 
       expect(projects[0].name).toBe('project-name-here');

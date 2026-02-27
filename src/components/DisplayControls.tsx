@@ -14,6 +14,7 @@ import {
   Speed as SpeedIcon,
   DarkMode as DarkModeIcon,
   LightMode as LightModeIcon,
+  AccountTree as SubagentIcon,
 } from '@mui/icons-material';
 import type { DisplaySettings } from '../types/chat';
 
@@ -109,6 +110,23 @@ const DisplayControls: React.FC<DisplayControlsProps> = ({ settings, onChange })
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <ResultIcon sx={{ fontSize: 16 }} />
             <Typography variant="body2">Tool Results</Typography>
+          </Box>
+        }
+        sx={{ mb: 0.5, ml: 0 }}
+      />
+
+      <FormControlLabel
+        control={
+          <Switch
+            size="small"
+            checked={settings.showSubagents}
+            onChange={(_, checked) => update({ showSubagents: checked })}
+          />
+        }
+        label={
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <SubagentIcon sx={{ fontSize: 16 }} />
+            <Typography variant="body2">Subagents</Typography>
           </Box>
         }
         sx={{ mb: 1, ml: 0 }}

@@ -24,6 +24,7 @@ import {
 } from '@mui/icons-material';
 import type { PlaybackMessage } from '../types/chat';
 import ReactMarkdown from 'react-markdown';
+import SubagentReplay from './SubagentReplay';
 
 interface ChatMessageProps {
   message: PlaybackMessage;
@@ -183,6 +184,10 @@ const ToolResultDisplay: React.FC<{ message: PlaybackMessage }> = ({ message }) 
 
 // --- Main ChatMessage component ---
 const ChatMessage: React.FC<ChatMessageProps> = ({ message, index }) => {
+  if (message.role === 'subagent' && message.subagent) {
+    return <SubagentReplay subagent={message.subagent} />;
+  }
+
   if (message.role === 'thinking_animation') {
     return (
       <Box sx={{ display: 'flex', flexDirection: 'row', mb: 2 }}>

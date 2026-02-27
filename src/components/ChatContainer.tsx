@@ -75,6 +75,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({
         if (msg.role === 'thinking' && !settings.showThinking) return false;
         if (msg.role === 'tool_call' && !settings.showToolCalls) return false;
         if (msg.role === 'tool_result' && !settings.showToolResults) return false;
+        if (msg.role === 'subagent' && !settings.showSubagents) return false;
         return true;
       });
 
@@ -112,6 +113,14 @@ const ChatContainer: React.FC<ChatContainerProps> = ({
               role: 'tool_result',
               content: msg.content,
               toolResult: msg.toolResult,
+            });
+            break;
+
+          case 'subagent':
+            playback.push({
+              role: 'subagent',
+              content: msg.content,
+              subagent: msg.subagent,
             });
             break;
 

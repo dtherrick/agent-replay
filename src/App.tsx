@@ -39,6 +39,7 @@ const defaultDisplaySettings: DisplaySettings = {
   showThinking: true,
   showToolCalls: true,
   showToolResults: true,
+  showSubagents: true,
   playbackSpeed: 1,
   themeMode: 'dark',
 };

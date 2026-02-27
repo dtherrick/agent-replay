@@ -11,6 +11,7 @@ function makeSettings(overrides: Partial<DisplaySettings> = {}): DisplaySettings
     showThinking: true,
     showToolCalls: true,
     showToolResults: true,
+    showSubagents: true,
     playbackSpeed: 1,
     themeMode: 'dark',
     ...overrides,

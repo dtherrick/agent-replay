@@ -1,7 +1,13 @@
 // --- Unified types (used by the adapter API and frontend) ---
 
+export interface SubagentConversation {
+  id: string;
+  messages: UnifiedMessage[];
+  createdAt?: number;
+}
+
 export interface UnifiedMessage {
-  role: 'user' | 'assistant' | 'thinking' | 'tool_call' | 'tool_result';
+  role: 'user' | 'assistant' | 'thinking' | 'tool_call' | 'tool_result' | 'subagent';
   content: string;
   toolCall?: {
     name: string;
@@ -11,6 +17,7 @@ export interface UnifiedMessage {
     name: string;
     output: string;
   };
+  subagent?: SubagentConversation;
   timestamp?: number;
 }
 
@@ -40,6 +47,7 @@ export interface DisplaySettings {
   showThinking: boolean;
   showToolCalls: boolean;
   showToolResults: boolean;
+  showSubagents: boolean;
   playbackSpeed: number;
   themeMode: 'light' | 'dark';
 }
@@ -59,7 +67,8 @@ export interface PlaybackMessage {
     | 'tool_call'
     | 'tool_result'
     | 'approval'
-    | 'thinking_animation';
+    | 'thinking_animation'
+    | 'subagent';
   content: string;
   toolCall?: {
     name: string;
@@ -69,6 +78,7 @@ export interface PlaybackMessage {
     name: string;
     output: string;
   };
+  subagent?: SubagentConversation;
   approval?: ApprovalState;
   isAnimating?: boolean;
 }

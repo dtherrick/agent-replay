@@ -2,7 +2,7 @@ import { readFile, readdir, access, stat } from 'fs/promises';
 import { join } from 'path';
 import { execSync } from 'child_process';
 import { homedir, platform } from 'os';
-import type { ChatSourceAdapter, ProjectInfo, ConversationSummary, UnifiedMessage } from './types';
+import type { ChatSourceAdapter, ProjectInfo, ConversationSummary, UnifiedMessage, SubagentConversation } from './types';
 
 function getCursorWorkspaceStorageDir(): string {
   const home = homedir();
@@ -24,10 +24,10 @@ export class CursorAdapter implements ChatSourceAdapter {
   private projectsDir: string;
   private workspaceStorageDir: string;
 
-  constructor() {
+  constructor(projectsDir?: string, workspaceStorageDir?: string) {
     const home = homedir();
-    this.projectsDir = join(home, '.cursor', 'projects');
-    this.workspaceStorageDir = getCursorWorkspaceStorageDir();
+    this.projectsDir = projectsDir ?? join(home, '.cursor', 'projects');
+    this.workspaceStorageDir = workspaceStorageDir ?? getCursorWorkspaceStorageDir();
   }
 
   async listProjects(): Promise<ProjectInfo[]> {
@@ -120,23 +120,97 @@ export class CursorAdapter implements ChatSourceAdapter {
     if (!projectId) return [];
 
     const transcriptsDir = join(this.projectsDir, projectId, 'agent-transcripts');
+    let messages: UnifiedMessage[];
 
     const jsonlPath = join(transcriptsDir, conversationId, `${conversationId}.jsonl`);
     try {
       await access(jsonlPath);
-      return await this.parseJsonlTranscript(jsonlPath);
+      messages = await this.parseJsonlTranscript(jsonlPath);
     } catch {
-      // fall through to .txt
+      const txtPath = join(transcriptsDir, `${conversationId}.txt`);
+      try {
+        await access(txtPath);
+        messages = await this.parseTxtTranscript(txtPath);
+      } catch (err) {
+        console.warn(`[CursorAdapter] No readable transcript found for ${conversationId}:`, err);
+        return [];
+      }
     }
 
-    const txtPath = join(transcriptsDir, `${conversationId}.txt`);
+    const subagents = await this.loadSubagents(transcriptsDir, conversationId);
+    if (subagents.length > 0) {
+      messages = this.placeSubagents(messages, subagents);
+    }
+
+    return messages;
+  }
+
+  private async loadSubagents(
+    transcriptsDir: string,
+    conversationId: string,
+  ): Promise<{ sub: SubagentConversation; createdAt: number }[]> {
+    const subDir = join(transcriptsDir, conversationId, 'subagents');
     try {
-      await access(txtPath);
-      return await this.parseTxtTranscript(txtPath);
-    } catch (err) {
-      console.warn(`[CursorAdapter] No readable transcript found for ${conversationId}:`, err);
+      await access(subDir);
+    } catch {
       return [];
     }
+
+    const entries = await readdir(subDir);
+    const results: { sub: SubagentConversation; createdAt: number }[] = [];
+
+    for (const entry of entries) {
+      if (!entry.endsWith('.jsonl')) continue;
+      const filePath = join(subDir, entry);
+      const subMessages = await this.parseJsonlTranscript(filePath);
+      const fileStat = await stat(filePath);
+      results.push({
+        sub: {
+          id: entry.replace('.jsonl', ''),
+          messages: subMessages,
+          createdAt: fileStat.birthtimeMs,
+        },
+        createdAt: fileStat.birthtimeMs,
+      });
+    }
+
+    results.sort((a, b) => a.createdAt - b.createdAt);
+    return results;
+  }
+
+  private placeSubagents(
+    messages: UnifiedMessage[],
+    subagents: { sub: SubagentConversation }[],
+  ): UnifiedMessage[] {
+    const result = [...messages];
+    const placed = new Set<number>();
+
+    for (let si = 0; si < subagents.length; si++) {
+      const { sub } = subagents[si];
+      const subMsg: UnifiedMessage = {
+        role: 'subagent',
+        content: `Subagent: ${sub.id.substring(0, 8)}`,
+        subagent: sub,
+      };
+
+      let insertIdx = -1;
+      for (let mi = 0; mi < result.length; mi++) {
+        if (result[mi].role === 'subagent') continue;
+        if (result[mi].content.toLowerCase().includes('subagent')) {
+          insertIdx = mi;
+          break;
+        }
+      }
+
+      if (insertIdx >= 0 && !placed.has(insertIdx)) {
+        placed.add(insertIdx);
+        result.splice(insertIdx, 0, subMsg);
+      } else {
+        result.push(subMsg);
+      }
+    }
+
+    return result;
   }
 
   // --- JSONL Parser ---

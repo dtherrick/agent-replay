@@ -15,8 +15,14 @@ export interface ConversationSummary {
   messageCount?: number;
 }
 
+export interface SubagentConversation {
+  id: string;
+  messages: UnifiedMessage[];
+  createdAt?: number;
+}
+
 export interface UnifiedMessage {
-  role: 'user' | 'assistant' | 'thinking' | 'tool_call' | 'tool_result';
+  role: 'user' | 'assistant' | 'thinking' | 'tool_call' | 'tool_result' | 'subagent';
   content: string;
   toolCall?: {
     name: string;
@@ -26,6 +32,7 @@ export interface UnifiedMessage {
     name: string;
     output: string;
   };
+  subagent?: SubagentConversation;
   timestamp?: number;
 }
 
