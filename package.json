@@ -1,21 +1,33 @@
 {
-  "name": "agent-replay",
-  "private": true,
-  "version": "0.0.0",
+  "name": "@daherrick-splunk/agent-replay",
+  "version": "0.1.0",
+  "description": "Replay and step through AI agent conversations from Cursor, Gemini CLI, and more",
   "type": "module",
+  "bin": {
+    "agent-replay": "bin/agent-replay.mjs"
+  },
+  "files": [
+    "bin/",
+    "dist/"
+  ],
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node esbuild.server.mjs",
+    "build:client": "tsc -b && vite build",
+    "build:server": "node esbuild.server.mjs",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "prepublishOnly": "npm run build",
+    "start": "node bin/agent-replay.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@mui/icons-material": "^7.2.0",
     "@mui/material": "^7.2.0",
+    "express": "^5.2.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-markdown": "^9.0.0"
@@ -25,6 +37,7 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
+    "@types/express": "^5.0.6",
     "@types/node": "^25.3.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
