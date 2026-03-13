@@ -4,16 +4,16 @@ import { execSync } from 'child_process';
 import { homedir, platform } from 'os';
 import type { ChatSourceAdapter, ProjectInfo, ConversationSummary, UnifiedMessage, SubagentConversation } from './types';
 
-function getCursorWorkspaceStorageDir(): string {
+function getCursorStorageBaseDir(): string {
   const home = homedir();
   switch (platform()) {
     case 'darwin':
-      return join(home, 'Library', 'Application Support', 'Cursor', 'User', 'workspaceStorage');
+      return join(home, 'Library', 'Application Support', 'Cursor', 'User');
     case 'win32':
-      return join(process.env.APPDATA || join(home, 'AppData', 'Roaming'), 'Cursor', 'User', 'workspaceStorage');
+      return join(process.env.APPDATA || join(home, 'AppData', 'Roaming'), 'Cursor', 'User');
     case 'linux':
     default:
-      return join(process.env.XDG_CONFIG_HOME || join(home, '.config'), 'Cursor', 'User', 'workspaceStorage');
+      return join(process.env.XDG_CONFIG_HOME || join(home, '.config'), 'Cursor', 'User');
   }
 }
 
@@ -23,11 +23,14 @@ export class CursorAdapter implements ChatSourceAdapter {
 
   private projectsDir: string;
   private workspaceStorageDir: string;
+  private globalStorageDir: string;
 
-  constructor(projectsDir?: string, workspaceStorageDir?: string) {
+  constructor(projectsDir?: string, workspaceStorageDir?: string, globalStorageDir?: string) {
     const home = homedir();
+    const storageBase = getCursorStorageBaseDir();
     this.projectsDir = projectsDir ?? join(home, '.cursor', 'projects');
-    this.workspaceStorageDir = workspaceStorageDir ?? getCursorWorkspaceStorageDir();
+    this.workspaceStorageDir = workspaceStorageDir ?? join(storageBase, 'workspaceStorage');
+    this.globalStorageDir = globalStorageDir ?? join(storageBase, 'globalStorage');
   }
 
   async listProjects(): Promise<ProjectInfo[]> {
@@ -71,9 +74,11 @@ export class CursorAdapter implements ChatSourceAdapter {
       console.warn(`[CursorAdapter] Could not load metadata for ${projectId}, continuing without titles:`, err);
     }
 
+    const conversations: ConversationSummary[] = [];
+    const seenIds = new Set<string>();
+
     try {
       const entries = await readdir(transcriptsDir, { withFileTypes: true });
-      const conversations: ConversationSummary[] = [];
 
       for (const entry of entries) {
         try {
@@ -94,6 +99,7 @@ export class CursorAdapter implements ChatSourceAdapter {
           const fileStat = await stat(filePath);
           const meta = metadata.get(conversationId);
 
+          seenIds.add(conversationId);
           conversations.push({
             id: conversationId,
             title: meta?.name || conversationId.substring(0, 8) + '...',
@@ -107,20 +113,34 @@ export class CursorAdapter implements ChatSourceAdapter {
           // Individual conversation not accessible, skip it
         }
       }
-
-      conversations.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-      return conversations;
-    } catch (err) {
-      console.warn(`[CursorAdapter] Could not read transcripts directory ${transcriptsDir}:`, err);
-      return [];
+    } catch {
+      // transcripts directory may not exist yet
     }
+
+    for (const [composerId, meta] of metadata) {
+      if (seenIds.has(composerId)) continue;
+      if (!this.hasDbConversation(composerId)) continue;
+
+      conversations.push({
+        id: composerId,
+        title: meta.name || composerId.substring(0, 8) + '...',
+        sourceId: this.id,
+        projectId,
+        projectName: this.slugToDisplayName(projectId),
+        createdAt: meta.createdAt,
+        updatedAt: meta.updatedAt,
+      });
+    }
+
+    conversations.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    return conversations;
   }
 
   async loadConversation(conversationId: string, projectId?: string): Promise<UnifiedMessage[]> {
     if (!projectId) return [];
 
     const transcriptsDir = join(this.projectsDir, projectId, 'agent-transcripts');
-    let messages: UnifiedMessage[];
+    let messages: UnifiedMessage[] | null = null;
 
     const jsonlPath = join(transcriptsDir, conversationId, `${conversationId}.jsonl`);
     try {
@@ -131,8 +151,14 @@ export class CursorAdapter implements ChatSourceAdapter {
       try {
         await access(txtPath);
         messages = await this.parseTxtTranscript(txtPath);
-      } catch (err) {
-        console.warn(`[CursorAdapter] No readable transcript found for ${conversationId}:`, err);
+      } catch {
+        // No file-based transcript; will try DB fallback below
+      }
+    }
+
+    if (messages === null) {
+      messages = this.loadConversationFromDb(conversationId);
+      if (messages.length === 0) {
         return [];
       }
     }
@@ -211,6 +237,182 @@ export class CursorAdapter implements ChatSourceAdapter {
     }
 
     return result;
+  }
+
+  // --- Global DB Loader ---
+
+  private getGlobalDbPath(): string {
+    return join(this.globalStorageDir, 'state.vscdb');
+  }
+
+  private hasDbConversation(composerId: string): boolean {
+    try {
+      const dbPath = this.getGlobalDbPath();
+      const result = execSync(
+        `sqlite3 "${dbPath}" "SELECT COUNT(*) FROM cursorDiskKV WHERE key='composerData:${composerId}';"`,
+        { encoding: 'utf-8', timeout: 5000 }
+      );
+      return parseInt(result.trim(), 10) > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  private loadConversationFromDb(composerId: string): UnifiedMessage[] {
+    const dbPath = this.getGlobalDbPath();
+
+    let composerDataRaw: string;
+    try {
+      composerDataRaw = execSync(
+        `sqlite3 "${dbPath}" "SELECT value FROM cursorDiskKV WHERE key='composerData:${composerId}';"`,
+        { encoding: 'utf-8', timeout: 10000 }
+      );
+    } catch (err) {
+      console.warn(
+        `[CursorAdapter] Could not read composerData from global DB for ${composerId}:`,
+        err instanceof Error ? err.message : err
+      );
+      return [];
+    }
+
+    let composerData: {
+      fullConversationHeadersOnly?: { bubbleId: string; type: number }[];
+    };
+    try {
+      composerData = JSON.parse(composerDataRaw.trim());
+    } catch {
+      return [];
+    }
+
+    const headers = composerData.fullConversationHeadersOnly || [];
+    if (headers.length === 0) return [];
+
+    const bubbleMap = this.loadAllBubblesFromDb(dbPath, composerId);
+    const messages: UnifiedMessage[] = [];
+
+    for (const header of headers) {
+      const bubble = bubbleMap.get(header.bubbleId);
+      if (!bubble) continue;
+
+      const bubbleType: number = (bubble.type as number) ?? header.type;
+      const text: string = (bubble.text as string) || '';
+      const toolFormerData = bubble.toolFormerData as
+        | { name?: string; rawArgs?: string; result?: string; status?: string }
+        | undefined;
+      const thinkingBlocks = (bubble.allThinkingBlocks || []) as { thinking?: string }[];
+
+      if (bubbleType === 1) {
+        const cleaned = text ? this.extractUserContent(text) : '';
+        if (cleaned) {
+          messages.push({ role: 'user', content: cleaned });
+        }
+        continue;
+      }
+
+      if (bubbleType === 2) {
+        if (thinkingBlocks.length > 0) {
+          const thinkingText = thinkingBlocks
+            .map(b => b.thinking || '')
+            .filter(Boolean)
+            .join('\n\n');
+          if (thinkingText) {
+            messages.push({ role: 'thinking', content: thinkingText });
+          }
+        }
+
+        if (toolFormerData?.name) {
+          let args: Record<string, string> = {};
+          if (toolFormerData.rawArgs) {
+            try {
+              const parsed = JSON.parse(toolFormerData.rawArgs);
+              args = parsed.args || parsed;
+            } catch {
+              args = { raw: toolFormerData.rawArgs };
+            }
+          }
+          const toolName = this.simplifyToolName(toolFormerData.name);
+          messages.push({
+            role: 'tool_call',
+            content: toolName,
+            toolCall: { name: toolName, args },
+          });
+
+          if (toolFormerData.result) {
+            let output = '(completed)';
+            try {
+              const resultData = JSON.parse(toolFormerData.result);
+              const innerResult = resultData.result;
+              if (typeof innerResult === 'string') {
+                output = innerResult.length > 2000
+                  ? innerResult.substring(0, 2000) + '...'
+                  : innerResult;
+              }
+            } catch {
+              output = toolFormerData.result.substring(0, 2000);
+            }
+            messages.push({
+              role: 'tool_result',
+              content: toolName,
+              toolResult: { name: toolName, output },
+            });
+          }
+          continue;
+        }
+
+        if (text) {
+          messages.push({ role: 'assistant', content: text });
+        }
+      }
+    }
+
+    return messages;
+  }
+
+  private loadAllBubblesFromDb(
+    dbPath: string,
+    composerId: string
+  ): Map<string, Record<string, unknown>> {
+    const bubbleMap = new Map<string, Record<string, unknown>>();
+    const prefix = `bubbleId:${composerId}:`;
+
+    try {
+      const raw = execSync(
+        `sqlite3 -separator '|||FIELD_SEP|||' "${dbPath}" "SELECT key, value FROM cursorDiskKV WHERE key LIKE '${prefix}%';"`,
+        { encoding: 'utf-8', timeout: 30000, maxBuffer: 100 * 1024 * 1024 }
+      );
+
+      for (const line of raw.split('\n')) {
+        if (!line.trim()) continue;
+        const sepIdx = line.indexOf('|||FIELD_SEP|||');
+        if (sepIdx < 0) continue;
+        const key = line.substring(0, sepIdx);
+        const value = line.substring(sepIdx + '|||FIELD_SEP|||'.length);
+        const bubbleId = key.substring(prefix.length);
+        try {
+          bubbleMap.set(bubbleId, JSON.parse(value));
+        } catch {
+          // skip malformed entries
+        }
+      }
+    } catch (err) {
+      console.warn(
+        `[CursorAdapter] Could not batch-load bubbles from global DB for ${composerId}:`,
+        err instanceof Error ? err.message : err
+      );
+    }
+
+    return bubbleMap;
+  }
+
+  private simplifyToolName(fullName: string): string {
+    const parts = fullName.split('-');
+    if (parts.length > 1) {
+      return parts[parts.length - 1]
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, c => c.toUpperCase())
+        .replace(/ /g, '');
+    }
+    return fullName;
   }
 
   // --- JSONL Parser ---
